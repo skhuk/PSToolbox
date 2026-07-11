@@ -423,7 +423,7 @@ function Import-DelimitedFileToSqlTable {
         die System-ANSI-Codepage -- passend zu Tools, die "Encoding Default"
         beim Schreiben verwenden, z.B. DBISAM-Exporte). Ohne explizite Angabe
         wuerde TextFieldParser UTF-8 annehmen, was ANSI-kodierte Umlaute
-        (z.B. "ö" als 0xF6) falsch dekodiert.
+        (z.B. "oe"-Umlaut als 0xF6) falsch dekodiert.
     .PARAMETER BatchSize
         SqlBulkCopy-Batchgroesse (Default 5000).
     .PARAMETER CommitEveryBatches
@@ -455,6 +455,8 @@ function Import-DelimitedFileToSqlTable {
     #>
     [CmdletBinding()]
     [OutputType([int])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'CommandTimeoutSec',
+        Justification = 'Wird im $newBulkCopy-Scriptblock verwendet (Closure) -- vom Analyzer nicht als Verwendung erkannt.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
