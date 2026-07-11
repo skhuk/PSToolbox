@@ -1,6 +1,6 @@
 @{
-    ModuleVersion     = '1.0.0'
-    GUID              = 'a1b2c3d4-1111-4222-8333-444455556666'
+    ModuleVersion     = '1.1.0'
+    GUID              = '8a282d78-f41f-4c78-b865-09ea998c699a'
     RootModule        = 'PSToolbox.Common.psm1'
     PowerShellVersion = '5.1'
     Description       = 'PSToolbox: Projektneutrale, wiederverwendbare PowerShell-Hilfsfunktionen (Hashtables, Dateisystem, Retry, Validierung).'
@@ -9,6 +9,7 @@
         'Merge-HashtableDeep',
         'Copy-HashtableDeep',
         'ConvertTo-HashtableFromPSCustomObject',
+        'Get-PSToolboxConfig',
         'Resolve-ValueOrDefault',
         'Get-DirectorySize',
         'Get-DiskFreeSpaceInfo',

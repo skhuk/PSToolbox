@@ -5,8 +5,8 @@
     #
     # Wer nur einzelne Bereiche braucht, importiert stattdessen gezielt das
     # jeweilige Modul-Manifest unter Modules/ (siehe README.md).
-    ModuleVersion     = '1.0.0'
-    GUID              = 'd4e5f6a7-4444-4555-8666-777788889999'
+    ModuleVersion     = '1.1.0'
+    GUID              = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
     PowerShellVersion = '5.1'
     Description       = 'PSToolbox: Sammel-Manifest, das alle projektneutralen PSToolbox-Module (Common, Logging, Sql) gemeinsam laedt.'
 
@@ -22,6 +22,7 @@
         'Merge-HashtableDeep',
         'Copy-HashtableDeep',
         'ConvertTo-HashtableFromPSCustomObject',
+        'Get-PSToolboxConfig',
         'Resolve-ValueOrDefault',
         'Get-DirectorySize',
         'Get-DiskFreeSpaceInfo',
@@ -32,8 +33,8 @@
 
         # PSToolbox.Logging
         'Initialize-Logging',
+        'Initialize-LoggingFromConfig',
         'Write-Log',
-        'Get-RunId',
         'Write-RunStart',
         'Write-RunEnd',
         'Invoke-LogRotation',
