@@ -10,15 +10,24 @@ der Funktionen unabhaengig voneinander weiterzuentwickeln.
 ## Struktur
 
 ```
-PSToolbox.psd1         <- Root-Manifest: laedt alle Module mit einem Import
+PSToolbox.psd1                  <- Root-Manifest: laedt alle Module mit einem Import
+PSToolbox.config.example.psd1   <- Vorlage fuer die projektbezogene Config (kopieren als PSToolbox.config.psd1)
+PSScriptAnalyzerSettings.psd1   <- Lint-Regeln fuer die CI (mit begruendeten Ausnahmen)
+CHANGELOG.md                    <- Aenderungen je Version (neue/geaenderte/entfernte Funktionen)
+TODO.md                         <- offene Punkte
 
 Modules/
-  PSToolbox.Common/    <- Hashtable, Dateisystem, Retry, Validierung
+  PSToolbox.Common/    <- Hashtable, Config, Dateisystem, Retry, Validierung
   PSToolbox.Logging/   <- CLI-/Datei-/SQL-Logging, Rotation, Exit-Codes
   PSToolbox.Sql/       <- SQL Server: dynamisches SQL, Bulk-Import, Connection-Strings
 
 docs/
   EINBINDUNG.md        <- Anleitung: PSToolbox in andere Projekte einbinden
+  MIGRATION.md         <- Zuordnung ZENZY-/GFPC-Funktionen -> PSToolbox (fuer die Umstellung)
+  sql/log-table.sql    <- Referenz-DDL der SQL-Log-Tabelle (PSToolbox legt sie nie an)
+
+tests/                 <- Pester-5-Tests (laufen in der CI unter Windows PowerShell 5.1)
+.github/workflows/     <- CI: PSScriptAnalyzer + Pester
 
 projekte/
   gfpc/                <- urspruenglicher Funktions-Snapshot aus dem gfpc-Projekt (Referenz)
@@ -57,6 +66,31 @@ Details, Funktionsuebersicht und Beispiele je Modul stehen im jeweiligen
 - [`Modules/PSToolbox.Logging/README.md`](Modules/PSToolbox.Logging/README.md)
 - [`Modules/PSToolbox.Sql/README.md`](Modules/PSToolbox.Sql/README.md)
 
+Fuer die Umstellung bestehender Projekte (zenzy, gfpc) auf PSToolbox siehe
+[`docs/MIGRATION.md`](docs/MIGRATION.md) - dort ist jede alte Funktion der
+neuen zugeordnet, inkl. der Breaking Changes. Aenderungen je Version sind im
+[`CHANGELOG.md`](CHANGELOG.md) dokumentiert.
+
+## Projektbezogene Konfiguration
+
+Nutzende Projekte koennen PSToolbox-Einstellungen (z. B. die DB-Parameter
+fuer das SQL-Logging) ueber eine Config-Datei setzen:
+
+1. [`PSToolbox.config.example.psd1`](PSToolbox.config.example.psd1) in das
+   Projekt kopieren als `PSToolbox.config.psd1` und anpassen.
+2. Secrets (Passwoerter) optional in eine lokale `PSToolbox.secrets.json`
+   auslagern (gleiche Struktur als JSON, ueberschreibt die Basis-Werte).
+3. Im Skript laden:
+
+```powershell
+$cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1 -SecretsPath .\PSToolbox.secrets.json
+Initialize-LoggingFromConfig -Config $cfg
+```
+
+Datenbank, Schema und Tabellenname der SQL-Log-Tabelle kommen damit
+vollstaendig aus der Config. Die Tabelle selbst muss bereits existieren -
+PSToolbox legt sie nie an (Referenz-DDL: [`docs/sql/log-table.sql`](docs/sql/log-table.sql)).
+
 ## Einbindung in ein Projekt
 
 Empfohlener Weg ist ein Git Submodule mit Branch-Tracking, sodass nutzende
@@ -78,3 +112,17 @@ und CI-Beispielen steht in [`docs/EINBINDUNG.md`](docs/EINBINDUNG.md).
 - `Set-StrictMode -Version Latest` in jedem Modul
 - Jede Funktion hat vollstaendige Comment-Based-Help (`Get-Help <Funktion> -Full`)
 - Keine projektspezifische Logik oder Namensgebung in den Modulen unter `Modules/`
+- Jede Aenderung an Funktionen wird im [`CHANGELOG.md`](CHANGELOG.md)
+  dokumentiert (neue/geaenderte/entfernte Funktionen je Version), die
+  `ModuleVersion` in den Manifesten wird synchron angehoben
+
+## Hinweis PowerShell 7
+
+Zielplattform ist **Windows PowerShell 5.1**. Die SQL-gebundenen Funktionen
+(PSToolbox.Sql sowie das SQL-Logging in PSToolbox.Logging) nutzen
+`System.Data.SqlClient`, das in PowerShell 7 (.NET Core/.NET) nicht mehr
+enthalten ist. Sicherer Weg unter PS 7: die Skripte, die SQL-Funktionen
+nutzen, weiterhin ueber `powershell.exe` (5.1) ausfuehren. Eine Migration
+auf `Microsoft.Data.SqlClient` (funktioniert unter 5.1 und 7) ist als
+Aufgabe in [`TODO.md`](TODO.md) vermerkt. Die uebrigen Funktionen
+(Hashtables, Config, Datei-Logging, Exit-Codes) laufen auch unter PS 7.

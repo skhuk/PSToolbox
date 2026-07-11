@@ -36,6 +36,25 @@ einen Connection-String und schreibt in ein festes Lifecycle-Schema
 eine bereits offene Connection/Transaction (z. B. innerhalb eines laufenden
 Imports) und ein frei benennbares Level/Source/Message-Schema.
 
+## Sicherheitshinweis: dynamisches SQL
+
+`Format-SqlLiteral` und `Expand-SqlPlaceholders` bauen Werte direkt in
+SQL-Text ein. Das Escaping ist korrekt, aber diese Funktionen sind fuer
+**interne/vertrauenswuerdige Werte** gedacht (z. B. Ergebnisse eigener
+`ExecuteScalar()`-Aufrufe, Werte aus versionierter Config). Fuer alles,
+was aus Nutzereingaben oder Fremddaten stammt, parametrisierte Queries
+verwenden (`SqlParameter`), wie es `Write-SqlTableLogEntry` vormacht.
+Dynamische Bezeichner (Tabellen-/Spaltennamen aus Config-/Datendateien)
+immer vorher mit `Test-SqlIdentifier` pruefen.
+
+## Hinweis PowerShell 7
+
+Dieses Modul nutzt `System.Data.SqlClient`, das in PowerShell 7 nicht mehr
+enthalten ist - die Funktionen mit SqlConnection-Bezug laufen daher nur
+unter Windows PowerShell 5.1 zuverlaessig. Die Migration auf
+`Microsoft.Data.SqlClient` ist als Aufgabe in der `TODO.md` (Repo-Root)
+vermerkt.
+
 ## Konventionen
 
 - Ziel-PowerShell-Version: 5.1 (`#Requires -Version 5.1`)

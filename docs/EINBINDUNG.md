@@ -103,6 +103,29 @@ if (-not (Test-Path $psToolbox)) {
 Import-Module $psToolbox -Force
 ```
 
+### Projektbezogene Konfiguration setzen
+
+PSToolbox-Einstellungen (z. B. die DB-Parameter fuer das SQL-Logging)
+gehoeren in das **nutzende Projekt**, nicht in das PSToolbox-Submodule:
+
+1. `external/PSToolbox/PSToolbox.config.example.psd1` in das Projekt-
+   Wurzelverzeichnis kopieren als `PSToolbox.config.psd1` und anpassen
+   (Datenbank, Schema, Tabellenname, Log-Verzeichnis, ...).
+2. Secrets (Passwoerter) in eine lokale `PSToolbox.secrets.json` auslagern
+   und beide Dateien je nach Inhalt in die `.gitignore` des Projekts
+   aufnehmen (mindestens die secrets.json).
+3. Im Skript laden:
+
+```powershell
+$cfg = Get-PSToolboxConfig -Path (Join-Path $PSScriptRoot 'PSToolbox.config.psd1') `
+                           -SecretsPath (Join-Path $PSScriptRoot 'PSToolbox.secrets.json')
+Initialize-LoggingFromConfig -Config $cfg
+```
+
+So bleibt das Submodule unveraendert (keine lokalen Aenderungen, die ein
+`submodule update` blockieren), und jedes Projekt bringt seine eigenen
+Werte mit.
+
 ### GitHub Actions / CI
 
 ```yaml

@@ -19,6 +19,7 @@ Get-Help Merge-Hashtable -Full
 | `Merge-HashtableDeep` | Zwei Hashtables rekursiv zusammenfuehren (Override gewinnt je Key, auch bei `$null`) |
 | `Copy-HashtableDeep` | Rekursive (tiefe) Kopie einer Hashtable |
 | `ConvertTo-HashtableFromPSCustomObject` | Rekursive PSCustomObject -> Hashtable Konvertierung (fuer PS 5.1 ohne `-AsHashtable`) |
+| `Get-PSToolboxConfig` | Laedt eine `.psd1`-Config und ueberschreibt sie optional per JSON-Secrets-Datei (rekursiver Merge) |
 | `Resolve-ValueOrDefault` | Generisches Coalesce-Pattern: Wert oder Fallback (auch als ScriptBlock) |
 | `Get-DirectorySize` | Rekursive Gesamtgroesse eines Verzeichnisses in Bytes |
 | `Get-DiskFreeSpaceInfo` | Freier/gesamter Speicherplatz eines Pfads, UNC-faehig (P/Invoke) |
@@ -40,6 +41,17 @@ Beide loesen ein aehnliches Problem unterschiedlich:
 - `Merge-HashtableDeep` mergt rekursiv in allen Ebenen und uebernimmt auch
   `$null`-Werte aus Override (nuetzlich fuer Config-Overlays, bei denen ein
   Key explizit auf `$null` gesetzt werden koennen soll).
+
+## Projektbezogene Konfiguration
+
+`Get-PSToolboxConfig` implementiert das Standard-Config-Muster fuer
+nutzende Projekte (Vorlage: `PSToolbox.config.example.psd1` im Repo-Root):
+versionierbare Basis als `.psd1`, lokale Overrides/Secrets als JSON.
+
+```powershell
+$cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1 -SecretsPath .\PSToolbox.secrets.json
+Initialize-LoggingFromConfig -Config $cfg   # aus PSToolbox.Logging
+```
 
 ## Konventionen
 
