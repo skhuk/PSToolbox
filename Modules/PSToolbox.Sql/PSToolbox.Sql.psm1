@@ -298,7 +298,10 @@ function Get-SqlEmptySchemaTable {
         if ($null -ne $command) { $command.Dispose() }
     }
 
-    return $schemaTable
+    # Unary-Komma: verhindert, dass PowerShell die (bei TOP 0 immer leere)
+    # DataTable beim Return "entrollt" -- ohne das Komma kaeme beim
+    # Aufrufer statt der DataTable u.U. $null an (leere Aufzaehlung).
+    return ,$schemaTable
 }
 
 function Convert-DelimitedFieldValue {
@@ -464,6 +467,9 @@ function Import-DelimitedFileToSqlTable {
     Add-Type -AssemblyName "Microsoft.VisualBasic"
 
     $schemaTable = Get-SqlEmptySchemaTable -QualifiedTable $QualifiedTable -Connection $Connection -Transaction $Transaction
+    if ($null -eq $schemaTable) {
+        throw "Get-SqlEmptySchemaTable hat fuer '$QualifiedTable' kein Schema geliefert (`$null)."
+    }
 
     $parser = $null
     $bulk = $null
