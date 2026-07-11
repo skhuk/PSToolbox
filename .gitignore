@@ -12,6 +12,9 @@ secrets.json
 *.secrets.json
 *.secrets.psd1
 *.local.psd1
+# Projektbezogene PSToolbox-Config (die .example bleibt versioniert)
+PSToolbox.config.psd1
+PSToolbox.secrets.json
 
 # --- Test-Ergebnisse (Pester) ---
 TestResults/

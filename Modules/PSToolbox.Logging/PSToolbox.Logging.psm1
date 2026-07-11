@@ -16,14 +16,24 @@ Set-StrictMode -Version Latest
     gewaehlt werden koennen:
 
     1. Session-basiert (Initialize-Logging + Write-Log + Write-RunStart/-End):
-       fuer laengere Skripte/Prozesse mit Lauf-Korrelation (RunId), SQL-
-       Lifecycle-Eintraegen und altersbasierter Logrotation.
+       fuer laengere Skripte/Prozesse mit SQL-Lifecycle-Eintraegen und
+       altersbasierter Logrotation. Zusammengehoerige Eintraege eines Laufs
+       werden ueber hostname + processid (PID der PowerShell-Session)
+       korreliert - in der SQL-Tabelle als Spalten, in der Logdatei ueber
+       die Session-Startzeile, die Initialize-Logging schreibt.
 
            Import-Module <Pfad>\PSToolbox.Logging.psd1 -Force
 
            Initialize-Logging -LogDirectory 'C:\Logs\MeinTool' -RetentionDays 90 `
-               -SqlConnectionString $connStr -SqlSchema 'log' -SqlTable 'log' `
+               -SqlConnectionString $connStr -SqlSchema 'log' -SqlTable 'LOG' `
                -ProcessName 'MeinTool' -Comment 'Aufgabenplaner-Lauf'
+
+       Alternativ mit projektbezogener Config-Datei (siehe
+       PSToolbox.config.example.psd1 und Get-PSToolboxConfig im
+       PSToolbox.Common-Modul):
+
+           $cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1
+           Initialize-LoggingFromConfig -Config $cfg
 
            Write-RunStart
 
@@ -48,9 +58,9 @@ Set-StrictMode -Version Latest
            Exit-WithCode -Code (Get-ScheduledTaskExitCode -ErrorCount $failedTables.Count)
 
     Enthaltene Funktionen:
-        Initialize-Logging        - Session-Setup (Log-Pfad, SQL-Ziel, Rotation ausloesen)
-        Write-Log                 - zentrale Log-Funktion (Datei + CLI-Streams + optional SQL)
-        Get-RunId                 - liefert die GUID des aktuellen Laufs
+        Initialize-Logging         - Session-Setup (Log-Pfad, SQL-Ziel, Rotation ausloesen)
+        Initialize-LoggingFromConfig - Session-Setup aus einer PSToolbox-Config-Hashtable
+        Write-Log                  - zentrale Log-Funktion (Datei + CLI-Streams + optional SQL)
         Write-RunStart             - SQL-Lifecycle-Eintrag: Lauf gestartet
         Write-RunEnd               - SQL-Lifecycle-Eintrag: Lauf beendet (State/Severity aus Ergebnis)
         Invoke-LogRotation         - altersbasierte (Retention-)Rotation fuer Logdateien
@@ -64,7 +74,6 @@ Set-StrictMode -Version Latest
         Exit-WithCode              - duenner Wrapper um 'exit'
 #>
 
-$script:RunId         = [System.Guid]::NewGuid().ToString()
 $script:LogFilePath   = $null
 $script:LogDirectory  = $null
 $script:SqlConnString = $null
@@ -81,11 +90,14 @@ function Initialize-Logging {
         Initialisiert Datei- und (optional) SQL-Logging fuer den aktuellen Lauf.
 
     .DESCRIPTION
-        Setzt den Modul-Session-Zustand (Lauf-GUID, Log-Dateipfad, SQL-Ziel,
+        Setzt den Modul-Session-Zustand (Log-Dateipfad, SQL-Ziel,
         Prozessname/Kommentar fuer Lifecycle-Eintraege), legt das Log-
-        Verzeichnis bei Bedarf an und stoesst die altersbasierte Logrotation
-        (Invoke-LogRotation) an. Muss vor Write-Log/Write-RunStart/Write-RunEnd
-        aufgerufen werden.
+        Verzeichnis bei Bedarf an, stoesst die altersbasierte Logrotation
+        (Invoke-LogRotation) an und schreibt eine Session-Startzeile mit
+        Hostname und ProcessId in die Logdatei. Ueber diese beiden Werte
+        lassen sich Datei- und SQL-Log-Eintraege desselben Laufs korrelieren
+        (die SQL-Tabelle fuehrt sie als Spalten hostname/processid). Muss vor
+        Write-Log/Write-RunStart/Write-RunEnd aufgerufen werden.
 
     .PARAMETER LogDirectory
         Verzeichnis, in dem taegliche Logdateien abgelegt werden.
@@ -151,6 +163,88 @@ function Initialize-Logging {
     if ($RetentionDays -gt 0) {
         Invoke-LogRotation -LogDirectory $LogDirectory -RetentionDays $RetentionDays -Pattern "${LogFilePrefix}_*.log"
     }
+
+    # Session-Startzeile: hostname + processid dienen zur Korrelation der
+    # nachfolgenden Datei-Eintraege mit den SQL-Log-Eintraegen dieses Laufs.
+    $ts        = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $startLine = "[$ts] [Info    ] [Logging] [] Session gestartet (hostname=$($script:Hostname), processid=$($script:ProcessId), processname=$ProcessName)"
+    Add-Content -Path $script:LogFilePath -Value $startLine -Encoding UTF8
+}
+
+function Initialize-LoggingFromConfig {
+    <#
+    .SYNOPSIS
+        Initialisiert das Logging aus einer PSToolbox-Config-Hashtable.
+
+    .DESCRIPTION
+        Komfort-Wrapper um Initialize-Logging fuer das projektbezogene
+        Config-Muster (siehe PSToolbox.config.example.psd1 im Repo-Root und
+        Get-PSToolboxConfig im PSToolbox.Common-Modul). Erwartet eine
+        Hashtable mit den Bloecken 'Logging' und optional 'SqlLogging':
+
+            Logging:    LogDirectory (Pflicht), RetentionDays, LogFilePrefix,
+                        ProcessName, Comment
+            SqlLogging: Enabled, Instance, Database, Schema, Table,
+                        AuthMode ('Windows'|'SqlLogin'), User, Password
+
+        Ist SqlLogging.Enabled = $true, wird aus Instance/Database/AuthMode
+        (plus User/Password bei SqlLogin) der Connection-String gebaut und
+        Schema/Table als SQL-Ziel gesetzt. Datenbank, Schema und Tabellenname
+        kommen damit vollstaendig aus der Config - die Log-Tabelle selbst
+        muss bereits existieren (siehe docs/sql/log-table.sql), PSToolbox
+        legt sie nie an.
+
+    .PARAMETER Config
+        Die Config-Hashtable (typischerweise aus Get-PSToolboxConfig).
+
+    .EXAMPLE
+        $cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1 -SecretsPath .\PSToolbox.secrets.json
+        Initialize-LoggingFromConfig -Config $cfg
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Config
+    )
+
+    if (-not $Config.ContainsKey('Logging') -or $Config.Logging -isnot [hashtable]) {
+        throw "Config enthaelt keinen 'Logging'-Block (Hashtable erwartet, siehe PSToolbox.config.example.psd1)."
+    }
+    $logCfg = $Config.Logging
+    if (-not $logCfg.ContainsKey('LogDirectory') -or [string]::IsNullOrWhiteSpace($logCfg.LogDirectory)) {
+        throw "Config.Logging.LogDirectory ist nicht gesetzt."
+    }
+
+    $params = @{ LogDirectory = $logCfg.LogDirectory }
+    if ($logCfg.ContainsKey('RetentionDays')) { $params.RetentionDays = [int]$logCfg.RetentionDays }
+    if ($logCfg.ContainsKey('LogFilePrefix') -and -not [string]::IsNullOrWhiteSpace($logCfg.LogFilePrefix)) { $params.LogFilePrefix = $logCfg.LogFilePrefix }
+    if ($logCfg.ContainsKey('ProcessName')) { $params.ProcessName = [string]$logCfg.ProcessName }
+    if ($logCfg.ContainsKey('Comment'))     { $params.Comment     = [string]$logCfg.Comment }
+
+    $sqlCfg = if ($Config.ContainsKey('SqlLogging') -and $Config.SqlLogging -is [hashtable]) { $Config.SqlLogging } else { $null }
+    if ($null -ne $sqlCfg -and $sqlCfg.ContainsKey('Enabled') -and $sqlCfg.Enabled) {
+        foreach ($required in @('Instance', 'Database')) {
+            if (-not $sqlCfg.ContainsKey($required) -or [string]::IsNullOrWhiteSpace($sqlCfg[$required])) {
+                throw "Config.SqlLogging.$required ist nicht gesetzt (bei SqlLogging.Enabled = `$true erforderlich)."
+            }
+        }
+
+        $authMode = if ($sqlCfg.ContainsKey('AuthMode')) { [string]$sqlCfg['AuthMode'] } else { 'Windows' }
+        # Connection-String-Bau bewusst inline (identisch zu
+        # New-SqlServerConnectionString im PSToolbox.Sql-Modul), damit das
+        # Logging-Modul unabhaengig importierbar bleibt.
+        $connStr = if ($authMode -eq 'SqlLogin') {
+            "Server=$($sqlCfg['Instance']);Database=$($sqlCfg['Database']);User Id=$($sqlCfg['User']);Password=$($sqlCfg['Password']);"
+        } else {
+            "Server=$($sqlCfg['Instance']);Database=$($sqlCfg['Database']);Integrated Security=True;"
+        }
+
+        $params.SqlConnectionString = $connStr
+        if ($sqlCfg.ContainsKey('Schema') -and -not [string]::IsNullOrWhiteSpace($sqlCfg.Schema)) { $params.SqlSchema = $sqlCfg.Schema }
+        if ($sqlCfg.ContainsKey('Table')  -and -not [string]::IsNullOrWhiteSpace($sqlCfg.Table))  { $params.SqlTable  = $sqlCfg.Table }
+    }
+
+    Initialize-Logging @params
 }
 
 function Write-Log {
@@ -163,8 +257,11 @@ function Write-Log {
         Initialize-Logging). Formatiert die Nachricht mit Zeitstempel, Level,
         Komponente und Quelle, haengt sie an die aktuelle Logdatei an (UTF8)
         und gibt sie zusaetzlich auf der Konsole aus - passend zum Level ueber
-        die nativen PowerShell-Streams (Write-Verbose fuer Debug/Info,
-        Write-Warning fuer Warning, Write-Error fuer Error/Critical). Ist ein
+        die nativen PowerShell-Streams (Write-Verbose fuer Debug,
+        Write-Information -InformationAction Continue fuer Info - dadurch
+        standardmaessig sichtbar, ohne den Rueckgabewert des Aufrufers zu
+        verunreinigen -, Write-Warning fuer Warning, Write-Error fuer
+        Error/Critical). Ist ein
         SQL-Ziel konfiguriert (siehe Initialize-Logging) UND -LogToSql gesetzt,
         wird der Eintrag zusaetzlich per Write-SqlLogEntry gespeichert
         (fail-soft: SQL-Fehler brechen den Aufruf nie ab, sondern werden als
@@ -217,7 +314,7 @@ function Write-Log {
 
     switch ($Level) {
         'Debug'    { Write-Verbose $line }
-        'Info'     { Write-Verbose $line }
+        'Info'     { Write-Information $line -InformationAction Continue }
         'Warning'  { Write-Warning $Message }
         'Error'    { Write-Error $Message -ErrorAction Continue }
         'Critical' { Write-Error $Message -ErrorAction Continue }
@@ -236,24 +333,6 @@ function Write-Log {
             -Hostname $script:Hostname -ProcessName $script:ProcessName -ProcessId $script:ProcessId `
             -LogFilePath $script:LogFilePath
     }
-}
-
-function Get-RunId {
-    <#
-    .SYNOPSIS
-        Liefert die GUID des aktuellen Laufs zur Korrelation von Datei- und SQL-Log-Eintraegen.
-
-    .EXAMPLE
-        $runId = Get-RunId
-
-    .OUTPUTS
-        System.String
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param()
-
-    return $script:RunId
 }
 
 function Write-RunStart {
@@ -378,12 +457,15 @@ function Write-SqlLogEntry {
         Eigenstaendig aufrufbare, parametrisierte SQL-Insert-Funktion fuer den
         session-basierten Logging-Stil (kein Modul-Zustand noetig - alle Werte
         werden als Parameter uebergeben, oeffnet und schliesst die eigene
-        Connection). Erwartet eine Zieltabelle mit den Spalten hostname,
-        processname, state, severity, processid, description; bei
-        abweichendem Schema muss die Funktion angepasst werden. Fail-soft:
-        Verbindungs-/Ausfuehrungsfehler werfen keine Exception, sondern
-        werden - falls LogFilePath angegeben ist - als Warnzeile in die
-        Datei geschrieben.
+        Connection). Erwartet eine bereits existierende Zieltabelle mit den
+        Spalten TS, hostname, processname, state, severity, processid,
+        description (Referenz-DDL: docs/sql/log-table.sql - PSToolbox legt
+        die Tabelle nie an). TS wird serverseitig per GETDATE() gesetzt.
+        Werte werden defensiv auf die Spaltenlaengen gekuerzt (hostname/
+        processname 255, state 50, severity 20, description 4000 Zeichen).
+        Fail-soft: Verbindungs-/Ausfuehrungsfehler werfen keine Exception,
+        sondern werden - falls LogFilePath angegeben ist - als Warnzeile in
+        die Datei geschrieben.
 
         Fuer generisches SQL-Logging in eine beliebig benannte Tabelle
         innerhalb einer bereits offenen Connection/Transaction (z. B.
@@ -451,14 +533,27 @@ function Write-SqlLogEntry {
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) { return }
 
+    # Defensiv auf die Spaltenlaengen der Referenztabelle kuerzen
+    # (docs/sql/log-table.sql), damit ein ueberlanger Wert den Insert
+    # nicht scheitern laesst.
+    $truncate = {
+        param([string]$Text, [int]$MaxLength)
+        if ($null -ne $Text -and $Text.Length -gt $MaxLength) { $Text.Substring(0, $MaxLength) } else { $Text }
+    }
+    $Hostname    = & $truncate $Hostname    255
+    $ProcessName = & $truncate $ProcessName 255
+    $State       = & $truncate $State       50
+    $Severity    = & $truncate $Severity    20
+    $Description = & $truncate $Description 4000
+
     try {
         $conn = New-Object System.Data.SqlClient.SqlConnection($ConnectionString)
         $conn.Open()
         try {
             $cmd = $conn.CreateCommand()
             $cmd.CommandText = "INSERT INTO [$Schema].[$Table] " +
-                               "(hostname, processname, state, severity, processid, description) " +
-                               "VALUES (@hostname, @processname, @state, @severity, @processid, @description)"
+                               "(TS, hostname, processname, state, severity, processid, description) " +
+                               "VALUES (GETDATE(), @hostname, @processname, @state, @severity, @processid, @description)"
 
             $cmd.Parameters.AddWithValue('@hostname',    $Hostname)    | Out-Null
             $cmd.Parameters.AddWithValue('@processname', $ProcessName) | Out-Null
@@ -553,6 +648,8 @@ function Send-LogAlert {
         Send-LogAlert -Message 'Kritischer Fehler im Nachtlauf' -Severity Critical
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '',
+        Justification = 'Platzhalter-Funktion: Parameter definieren die kuenftige Schnittstelle, Implementierung folgt (siehe TODO.md).')]
     param(
         [Parameter(Mandatory)]
         [string]$Message,
@@ -591,6 +688,8 @@ function Export-LogArchive {
         Export-LogArchive -LogDirectory 'C:\Logs\MeinTool' -ArchivePath 'C:\Logs\Archiv\2026-06.zip' -OlderThanDays 30
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '',
+        Justification = 'Platzhalter-Funktion: Parameter definieren die kuenftige Schnittstelle, Implementierung folgt (siehe TODO.md).')]
     param(
         [Parameter(Mandatory)]
         [string]$LogDirectory,
@@ -648,6 +747,7 @@ function Write-LogEntry {
     .EXAMPLE
         Write-LogEntry -Message "Tabelle X fehlgeschlagen." -Level Error -LogFilePath $logPath
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message,
@@ -710,6 +810,7 @@ function Invoke-LogFileRotation {
     .EXAMPLE
         Invoke-LogFileRotation -LogFilePath "C:\logs\import.log" -MaxSizeKB 500 -MaxGenerations 9
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$LogFilePath,
@@ -768,6 +869,8 @@ function Get-ScheduledTaskExitCode {
         $code = Get-ScheduledTaskExitCode -ErrorCount $failedTables.Count
         Exit-WithCode -Code $code
     #>
+    [CmdletBinding()]
+    [OutputType([int])]
     param(
         [Parameter(Mandatory = $true)]
         [int]$ErrorCount,
@@ -800,6 +903,7 @@ function Exit-WithCode {
     .EXAMPLE
         Exit-WithCode -Code (Get-ScheduledTaskExitCode -ErrorCount 0)
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [int]$Code
@@ -810,8 +914,8 @@ function Exit-WithCode {
 
 Export-ModuleMember -Function `
     Initialize-Logging, `
+    Initialize-LoggingFromConfig, `
     Write-Log, `
-    Get-RunId, `
     Write-RunStart, `
     Write-RunEnd, `
     Invoke-LogRotation, `

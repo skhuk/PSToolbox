@@ -37,6 +37,7 @@ function Test-SqlIdentifier {
     .EXAMPLE
         Test-SqlIdentifier -Identifier $tableName -Description "Tabellenname"
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Identifier,
@@ -69,6 +70,8 @@ function Format-SqlLiteral {
     .EXAMPLE
         $sql = "WHERE Nr > " + (Format-SqlLiteral -Value $maxNr)
     #>
+    [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [AllowNull()]
@@ -122,6 +125,7 @@ function Expand-SqlPlaceholders {
         Expand-SqlPlaceholders -Template "Nr >= :MaxNr" -ResolvedValues $resolved
         # "Nr >= 4200"
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Template,
@@ -168,6 +172,8 @@ function New-SqlServerConnectionString {
     .EXAMPLE
         New-SqlServerConnectionString -Instance "srv\i1" -Database "MeineDB" -AuthMode SqlLogin -User "app" -Password "geheim"
     #>
+    [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Instance,
@@ -212,6 +218,7 @@ function Invoke-SqlBatchScript {
     .EXAMPLE
         Invoke-SqlBatchScript -Sql $ddl -Connection $conn -Transaction $tx
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Sql,
@@ -264,6 +271,7 @@ function Get-SqlEmptySchemaTable {
         $schema = Get-SqlEmptySchemaTable -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction $tx
         $schema.Columns | ForEach-Object { $_.ColumnName }
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$QualifiedTable,
@@ -328,6 +336,7 @@ function Convert-DelimitedFieldValue {
     .EXAMPLE
         Convert-DelimitedFieldValue -Value "3,14" -TargetType ([double]) -NumberCulture (Get-Culture "de-DE")
     #>
+    [CmdletBinding()]
     param(
         [string]$Value,
 
@@ -420,6 +429,8 @@ function Import-DelimitedFileToSqlTable {
     .EXAMPLE
         Import-DelimitedFileToSqlTable -Path "C:\export\Kunden.csv" -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction $tx
     #>
+    [CmdletBinding()]
+    [OutputType([int])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -579,6 +590,7 @@ function Write-SqlTableLogEntry {
     .EXAMPLE
         Write-SqlTableLogEntry -Connection $conn -Transaction $tx -QualifiedLogTable "[dbo].[AppLog]" -Level "Error" -Source "Invoke-Import" -Message "Tabelle X fehlgeschlagen."
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [System.Data.SqlClient.SqlConnection]$Connection,

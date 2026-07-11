@@ -18,7 +18,7 @@ Set-StrictMode -Version Latest
         Get-Help <Funktionsname> -Full
 #>
 
-# P/Invoke fuer GetDiskFreeSpaceEx – funktioniert fuer lokale Pfade und UNC-Pfade
+# P/Invoke fuer GetDiskFreeSpaceEx - funktioniert fuer lokale Pfade und UNC-Pfade
 if (-not ([System.Management.Automation.PSTypeName]'PSToolboxDiskSpace').Type) {
 Add-Type -TypeDefinition @'
 using System;
@@ -207,6 +207,67 @@ function ConvertTo-HashtableFromPSCustomObject {
     }
 
     return $result
+}
+
+function Get-PSToolboxConfig {
+    <#
+    .SYNOPSIS
+        Laedt eine .psd1-Konfigurationsdatei und ueberschreibt sie optional
+        mit Werten aus einer JSON-Secrets-Datei.
+
+    .DESCRIPTION
+        Standard-Muster fuer projektbezogene PSToolbox-Konfiguration (siehe
+        PSToolbox.config.example.psd1 im Repo-Root): die versionierbare
+        Basis-Konfiguration liegt als .psd1 im Projekt, umgebungsspezifische
+        oder geheime Werte (Passwoerter, Instanznamen) in einer lokalen,
+        nicht versionierten JSON-Datei mit gleicher Struktur. Die JSON-Werte
+        gewinnen je Key (rekursiver Merge via Merge-HashtableDeep), nicht
+        genannte Keys bleiben aus der Basis erhalten.
+
+        Fehlt die Secrets-Datei, wird nur die Basis geladen (kein Fehler) -
+        so laeuft dasselbe Skript mit und ohne lokalen Override. Eine
+        fehlende Basis-Config dagegen wirft einen Fehler.
+
+    .PARAMETER Path
+        Pfad zur .psd1-Basis-Konfiguration.
+
+    .PARAMETER SecretsPath
+        Optionaler Pfad zu einer JSON-Datei, deren Werte die Basis
+        ueberschreiben. Existiert die Datei nicht, wird sie ignoriert.
+
+    .EXAMPLE
+        $cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1
+        Initialize-LoggingFromConfig -Config $cfg
+
+    .EXAMPLE
+        $cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1 -SecretsPath .\PSToolbox.secrets.json
+        # secrets.json enthaelt z. B. { "SqlLogging": { "Password": "geheim" } }
+
+    .OUTPUTS
+        System.Collections.Hashtable
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [string]$SecretsPath = ''
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "Konfigurationsdatei nicht gefunden: '$Path'"
+    }
+
+    $config = Import-PowerShellDataFile -Path $Path
+
+    if (-not [string]::IsNullOrWhiteSpace($SecretsPath) -and (Test-Path $SecretsPath)) {
+        $json      = Get-Content -Path $SecretsPath -Raw | ConvertFrom-Json
+        $overrides = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $config    = Merge-HashtableDeep -Base $config -Override $overrides
+    }
+
+    return $config
 }
 
 function Resolve-ValueOrDefault {
@@ -493,6 +554,7 @@ Export-ModuleMember -Function `
     Merge-HashtableDeep, `
     Copy-HashtableDeep, `
     ConvertTo-HashtableFromPSCustomObject, `
+    Get-PSToolboxConfig, `
     Resolve-ValueOrDefault, `
     Get-DirectorySize, `
     Get-DiskFreeSpaceInfo, `

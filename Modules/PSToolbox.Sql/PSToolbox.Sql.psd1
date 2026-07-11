@@ -1,6 +1,6 @@
 @{
-    ModuleVersion     = '1.0.0'
-    GUID              = 'c3d4e5f6-3333-4444-8555-666677778888'
+    ModuleVersion     = '1.1.0'
+    GUID              = 'b6a074c4-b0fc-4b65-89f3-e7113621947a'
     RootModule        = 'PSToolbox.Sql.psm1'
     PowerShellVersion = '5.1'
     Description       = 'PSToolbox: Projektneutrale SQL-Server-Helferfunktionen (dynamisches SQL, Connection-Strings, Batch-Skripte, CSV/Delimited-Bulk-Import, generisches Tabellen-Logging).'

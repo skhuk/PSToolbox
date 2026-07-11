@@ -8,14 +8,16 @@ Skript-Groesse/-Anforderung gewaehlt werden koennen.
 ## Stil 1: Session-basiert (fuer laengere Prozesse)
 
 `Initialize-Logging` + `Write-Log` + `Write-RunStart`/`Write-RunEnd`: mit
-Lauf-Korrelation (RunId), SQL-Lifecycle-Eintraegen und altersbasierter
-Logrotation.
+SQL-Lifecycle-Eintraegen und altersbasierter Logrotation. Die Eintraege
+eines Laufs werden ueber `hostname` + `processid` (PID der PowerShell-
+Session) korreliert: in der SQL-Tabelle als Spalten, in der Logdatei ueber
+die Session-Startzeile, die `Initialize-Logging` schreibt.
 
 ```powershell
 Import-Module <Pfad>\PSToolbox.Logging\PSToolbox.Logging.psd1 -Force
 
 Initialize-Logging -LogDirectory 'C:\Logs\MeinTool' -RetentionDays 90 `
-    -SqlConnectionString $connStr -SqlSchema 'log' -SqlTable 'log' `
+    -SqlConnectionString $connStr -SqlSchema 'log' -SqlTable 'LOG' `
     -ProcessName 'MeinTool' -Comment 'Aufgabenplaner-Lauf'
 
 Write-RunStart
@@ -34,6 +36,15 @@ Write-RunEnd -RunErrors $fehler
 exit (ConvertTo-ExitCode -RunErrors $fehler)
 ```
 
+Alternativ mit projektbezogener Config-Datei (Vorlage:
+`PSToolbox.config.example.psd1` im Repo-Root; `Get-PSToolboxConfig` kommt
+aus dem `PSToolbox.Common`-Modul):
+
+```powershell
+$cfg = Get-PSToolboxConfig -Path .\PSToolbox.config.psd1 -SecretsPath .\PSToolbox.secrets.json
+Initialize-LoggingFromConfig -Config $cfg
+```
+
 ## Stil 2: Zustandslos (fuer kleinere Skripte)
 
 `Write-LogEntry`: kein `Initialize-Logging`-Vorlauf noetig, Rotation
@@ -49,9 +60,9 @@ Exit-WithCode -Code (Get-ScheduledTaskExitCode -ErrorCount $failedTables.Count)
 
 | Funktion | Stil | Zweck |
 |---|---|---|
-| `Initialize-Logging` | Session | Session-Setup: Log-Pfad, SQL-Ziel, loest Logrotation aus |
+| `Initialize-Logging` | Session | Session-Setup: Log-Pfad, SQL-Ziel, loest Logrotation aus, schreibt Session-Startzeile (hostname/processid) |
+| `Initialize-LoggingFromConfig` | Session | Session-Setup aus einer PSToolbox-Config-Hashtable (siehe `Get-PSToolboxConfig`) |
 | `Write-Log` | Session | Zentrale Log-Funktion: Datei-Log + PowerShell-Streams je nach Level, optional SQL |
-| `Get-RunId` | Session | Liefert die GUID des aktuellen Laufs (Korrelation Datei-/SQL-Log) |
 | `Write-RunStart` | Session | SQL-Lifecycle-Eintrag "Lauf gestartet" (fail-soft) |
 | `Write-RunEnd` | Session | SQL-Lifecycle-Eintrag "Lauf beendet", State/Severity aus Ergebnis abgeleitet (fail-soft) |
 | `Invoke-LogRotation` | Session | Altersbasierte (Retention-)Rotation fuer ein Log-Verzeichnis |
@@ -80,14 +91,34 @@ Zwei Schemata stehen zur Wahl:
 - `Get-ScheduledTaskExitCode`: `0` = kein Fehler, `1` = mindestens ein
   Fehler, `2` = keine Fehler aber mindestens eine Warnung.
 
+## CLI-Ausgabe
+
+`Write-Log` gibt Nachrichten passend zum `-Level` ueber die nativen
+PowerShell-Streams aus:
+
+- `Debug` -> `Write-Verbose` (nur sichtbar mit `-Verbose`)
+- `Info` -> `Write-Information -InformationAction Continue` (standardmaessig
+  sichtbar, landet nicht im Rueckgabewert des Aufrufers)
+- `Warning` -> `Write-Warning`
+- `Error`/`Critical` -> `Write-Error -ErrorAction Continue`
+
 ## SQL-Logging
 
 `Write-SqlLogEntry` / `Write-RunStart` / `Write-RunEnd` erwarten eine
-Zieltabelle mit den Spalten `hostname, processname, state, severity,
-processid, description`. Ohne `-SqlConnectionString` (bei
+**bereits existierende** Zieltabelle mit den Spalten `TS, hostname,
+processname, state, severity, processid, description` - Referenz-DDL:
+[`docs/sql/log-table.sql`](../../docs/sql/log-table.sql). PSToolbox legt
+die Tabelle **niemals** selbst an; Datenbank, Schema und Tabellenname
+werden ueber Parameter bzw. die Projekt-Config referenziert. `TS` wird
+serverseitig per `GETDATE()` gefuellt, alle Textwerte werden defensiv auf
+die Spaltenlaengen gekuerzt. Ohne `-SqlConnectionString` (bei
 `Initialize-Logging`) findet kein SQL-Logging statt. Bei SQL-Fehlern wird
 **nie** eine Exception geworfen (fail-soft) - stattdessen landet eine
 Warnzeile in der Datei-Logdatei.
+
+Korrelation: zusammengehoerige Eintraege eines Laufs finden sich ueber
+`hostname` + `processid` - dieselben Werte stehen in der Session-Startzeile
+der Datei-Logdatei.
 
 ## Logrotation
 

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: PSScriptAnalyzer + Pester (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PSScriptAnalyzer
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
+          if ($results) {
+            $results | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize | Out-String -Width 200 | Write-Host
+          }
+          $findings = @($results | Where-Object { $_.Severity -in @('Error', 'Warning') })
+          if ($findings.Count -gt 0) {
+            Write-Host "::error::PSScriptAnalyzer: $($findings.Count) Findings mit Severity Warning/Error."
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: keine Findings mit Severity Warning/Error."
+
+      - name: Pester-Tests
+        shell: powershell
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -SkipPublisherCheck -MinimumVersion 5.5.0
+          Import-Module Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = '.\tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
