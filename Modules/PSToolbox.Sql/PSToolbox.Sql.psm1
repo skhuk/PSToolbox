@@ -776,6 +776,8 @@ function Import-DelimitedFileToSqlTable {
     [OutputType([int])]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'CommandTimeoutSec',
         Justification = 'Wird im $newBulkCopy-Scriptblock verwendet (Closure) -- vom Analyzer nicht als Verwendung erkannt.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'LogFilePath',
+        Justification = 'Wird im $writeBatchProgress-Scriptblock verwendet (Closure) -- vom Analyzer nicht als Verwendung erkannt.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
