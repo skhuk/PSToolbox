@@ -410,7 +410,12 @@ function Import-DelimitedFileToSqlTable {
     .PARAMETER Connection
         Eine offene SqlConnection.
     .PARAMETER Transaction
-        Die SqlTransaction, in der der Import laufen soll.
+        [ref] auf die SqlTransaction, in der der Import laufen soll. Als
+        [ref] uebergeben, weil die Funktion bei gesetztem CommitEveryBatches
+        zwischendurch committet und eine neue Transaction beginnt -- der
+        Aufrufer muss danach mit der aktuellen (noch offenen) Transaction
+        weiterarbeiten (z.B. fuer Commit/Rollback am Ende), daher
+        Rueckgabe ueber denselben [ref], nicht per Wert.
     .PARAMETER Delimiter
         Feldtrennzeichen (Default ";").
     .PARAMETER Encoding
@@ -421,6 +426,16 @@ function Import-DelimitedFileToSqlTable {
         (z.B. "ö" als 0xF6) falsch dekodiert.
     .PARAMETER BatchSize
         SqlBulkCopy-Batchgroesse (Default 5000).
+    .PARAMETER CommitEveryBatches
+        Optional (Default 0 = deaktiviert): committet die Transaction alle
+        N Batches und beginnt sofort eine neue -- verhindert bei sehr
+        grossen Importen ("ACTIVE_TRANSACTION"-Meldungen durch ein volles
+        Transaktionsprotokoll, da eine einzelne, ueber den gesamten Import
+        offene Transaction vom Log nicht zurueckgeschnitten werden kann.
+        ACHTUNG: schwaecht die Alles-oder-nichts-Garantie des Aufrufers --
+        schlaegt der Import nach einem Zwischen-Commit fehl, bleiben die
+        bereits committeten Batches in der Zieltabelle stehen (kein
+        Rollback mehr moeglich fuer diese Zeilen).
     .PARAMETER CommandTimeoutSec
         Bulk-Copy-Timeout in Sekunden (Default 300).
     .PARAMETER EmptyStringAsNull
@@ -436,7 +451,7 @@ function Import-DelimitedFileToSqlTable {
     .OUTPUTS
         Anzahl importierter Zeilen (int).
     .EXAMPLE
-        Import-DelimitedFileToSqlTable -Path "C:\export\Kunden.csv" -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction $tx
+        Import-DelimitedFileToSqlTable -Path "C:\export\Kunden.csv" -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction ([ref]$tx)
     #>
     [CmdletBinding()]
     [OutputType([int])]
@@ -451,13 +466,15 @@ function Import-DelimitedFileToSqlTable {
         [System.Data.SqlClient.SqlConnection]$Connection,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlTransaction]$Transaction,
+        [ref]$Transaction,
 
         [string]$Delimiter = ";",
 
         [System.Text.Encoding]$Encoding = [System.Text.Encoding]::Default,
 
         [int]$BatchSize = 5000,
+
+        [int]$CommitEveryBatches = 0,
 
         [int]$CommandTimeoutSec = 300,
 
@@ -474,7 +491,7 @@ function Import-DelimitedFileToSqlTable {
 
     Add-Type -AssemblyName "Microsoft.VisualBasic"
 
-    $schemaTable = Get-SqlEmptySchemaTable -QualifiedTable $QualifiedTable -Connection $Connection -Transaction $Transaction
+    $schemaTable = Get-SqlEmptySchemaTable -QualifiedTable $QualifiedTable -Connection $Connection -Transaction $Transaction.Value
     if ($null -eq $schemaTable) {
         throw "Get-SqlEmptySchemaTable hat fuer '$QualifiedTable' kein Schema geliefert (`$null)."
     }
@@ -482,6 +499,18 @@ function Import-DelimitedFileToSqlTable {
     $parser = $null
     $bulk = $null
     $rowCount = 0
+    $batchesSinceCommit = 0
+
+    $newBulkCopy = {
+        $b = New-Object System.Data.SqlClient.SqlBulkCopy($Connection, [System.Data.SqlClient.SqlBulkCopyOptions]::TableLock, $Transaction.Value)
+        $b.DestinationTableName = $QualifiedTable
+        $b.BulkCopyTimeout = $CommandTimeoutSec
+        $b.BatchSize = $BatchSize
+        foreach ($header in $headers) {
+            [void]$b.ColumnMappings.Add($header, $header)
+        }
+        return $b
+    }
 
     try {
         $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path, $Encoding)
@@ -504,14 +533,7 @@ function Import-DelimitedFileToSqlTable {
             $columnTypes += $schemaTable.Columns[$header].DataType
         }
 
-        $bulk = New-Object System.Data.SqlClient.SqlBulkCopy($Connection, [System.Data.SqlClient.SqlBulkCopyOptions]::TableLock, $Transaction)
-        $bulk.DestinationTableName = $QualifiedTable
-        $bulk.BulkCopyTimeout = $CommandTimeoutSec
-        $bulk.BatchSize = $BatchSize
-
-        foreach ($header in $headers) {
-            [void]$bulk.ColumnMappings.Add($header, $header)
-        }
+        $bulk = & $newBulkCopy
 
         $buffer = New-Object System.Data.DataTable
         for ($i = 0; $i -lt $headers.Count; $i++) {
@@ -540,6 +562,15 @@ function Import-DelimitedFileToSqlTable {
             if ($buffer.Rows.Count -ge $BatchSize) {
                 $bulk.WriteToServer($buffer)
                 $buffer.Clear()
+                $batchesSinceCommit++
+
+                if (($CommitEveryBatches -gt 0) -and ($batchesSinceCommit -ge $CommitEveryBatches)) {
+                    $bulk.Close()
+                    $Transaction.Value.Commit()
+                    $Transaction.Value = $Connection.BeginTransaction()
+                    $bulk = & $newBulkCopy
+                    $batchesSinceCommit = 0
+                }
             }
         }
 
