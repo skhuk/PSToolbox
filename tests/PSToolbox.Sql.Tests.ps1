@@ -138,10 +138,6 @@ Describe 'Convert-DelimitedFieldValue' {
 }
 
 Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
-    BeforeAll {
-        Add-Type -AssemblyName 'Microsoft.VisualBasic'
-    }
-
     It 'Initialize-PSToolboxDelimitedDataReaderType kompiliert ohne Fehler (auch mehrfach aufgerufen)' {
         InModuleScope 'PSToolbox.Sql' {
             { Initialize-PSToolboxDelimitedDataReaderType } | Should -Not -Throw
@@ -150,7 +146,7 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
         }
     }
 
-    It 'liest Zeilen als Strings, leerer String wird zu DBNull' {
+    It 'liest Header und Zeilen als Strings, leerer String wird zu DBNull' {
         InModuleScope 'PSToolbox.Sql' {
             Initialize-PSToolboxDelimitedDataReaderType
 
@@ -161,30 +157,79 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
                 'Bob;'
             )
 
-            $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($path, [System.Text.Encoding]::UTF8)
-            $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
-            $parser.SetDelimiters(';')
-            $parser.HasFieldsEnclosedInQuotes = $true
-            $headers = $parser.ReadFields()
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, ([System.Text.Encoding]::UTF8), ([char]';'), $true
+            try {
+                $reader.Headers | Should -Be @('Name', 'Wert')
+                $reader.FieldCount | Should -Be 2
+                $reader.GetName(0) | Should -Be 'Name'
+                $reader.GetOrdinal('Wert') | Should -Be 1
 
-            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $true
+                $reader.Read() | Should -BeTrue
+                $reader.GetValue(0) | Should -Be 'Alice'
+                $reader.GetValue(1) | Should -Be '1'
 
-            $reader.FieldCount | Should -Be 2
-            $reader.GetName(0) | Should -Be 'Name'
-            $reader.GetOrdinal('Wert') | Should -Be 1
+                $reader.Read() | Should -BeTrue
+                $reader.GetValue(0) | Should -Be 'Bob'
+                $reader.IsDBNull(1) | Should -BeTrue
 
-            $reader.Read() | Should -BeTrue
-            $reader.GetValue(0) | Should -Be 'Alice'
-            $reader.GetValue(1) | Should -Be '1'
+                $reader.Read() | Should -BeFalse
+                $reader.TotalRowsRead | Should -Be 2
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    }
 
-            $reader.Read() | Should -BeTrue
-            $reader.GetValue(0) | Should -Be 'Bob'
-            $reader.IsDBNull(1) | Should -BeTrue
+    It 'parst gequotete Felder inkl. eingebettetem Trennzeichen, Zeilenumbruch und verdoppeltem Quote' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
 
-            $reader.Read() | Should -BeFalse
-            $reader.TotalRowsRead | Should -Be 2
+            $path = Join-Path $TestDrive 'reader-quote-test.csv'
+            $content = "A;B;C`r`n" +
+                "`"Semi;kolon`";`"Zeile1`nZeile2`";`"Er sagte `"`"Hi`"`"`"`r`n" +
+                "normal;;letzte`r`n"
+            [System.IO.File]::WriteAllText($path, $content, [System.Text.Encoding]::UTF8)
 
-            $parser.Dispose()
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, ([System.Text.Encoding]::UTF8), ([char]';'), $true
+            try {
+                $reader.Headers | Should -Be @('A', 'B', 'C')
+
+                $reader.Read() | Should -BeTrue
+                $reader.GetValue(0) | Should -Be 'Semi;kolon'
+                $reader.GetValue(1) | Should -Be "Zeile1`nZeile2"
+                $reader.GetValue(2) | Should -Be 'Er sagte "Hi"'
+
+                $reader.Read() | Should -BeTrue
+                $reader.GetValue(0) | Should -Be 'normal'
+                $reader.IsDBNull(1) | Should -BeTrue
+                $reader.GetValue(2) | Should -Be 'letzte'
+
+                $reader.Read() | Should -BeFalse
+                $reader.TotalRowsRead | Should -Be 2
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    }
+
+    It 'wirft bei abweichender Feldanzahl mit Datensatz-Nummer' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
+
+            $path = Join-Path $TestDrive 'reader-fieldcount-test.csv'
+            Set-Content -Path $path -Encoding UTF8 -Value @(
+                'A;B',
+                '1;2',
+                'nur-ein-feld'
+            )
+
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, ([System.Text.Encoding]::UTF8), ([char]';'), $true
+            try {
+                $reader.Read() | Should -BeTrue
+                { $reader.Read() } | Should -Throw '*Felder, erwartet 2*'
+            } finally {
+                $reader.Dispose()
+            }
         }
     }
 
@@ -196,36 +241,50 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
             $lines = @('Nr') + (1..5 | ForEach-Object { "$_" })
             Set-Content -Path $path -Encoding UTF8 -Value $lines
 
-            $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($path, [System.Text.Encoding]::UTF8)
-            $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
-            $parser.SetDelimiters(';')
-            $parser.HasFieldsEnclosedInQuotes = $true
-            $headers = $parser.ReadFields()
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, ([System.Text.Encoding]::UTF8), ([char]';'), $true
+            try {
+                $reader.MaxRowsPerCall = 2
 
-            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $true
-            $reader.MaxRowsPerCall = 2
+                $reader.PrepareNextBatch()
+                $rowsFirstBatch = 0
+                while ($reader.Read()) { $rowsFirstBatch++ }
+                $rowsFirstBatch | Should -Be 2
+                $reader.HasMoreData | Should -BeTrue
 
-            $reader.PrepareNextBatch()
-            $rowsFirstBatch = 0
-            while ($reader.Read()) { $rowsFirstBatch++ }
-            $rowsFirstBatch | Should -Be 2
-            $reader.HasMoreData | Should -BeTrue
+                $reader.PrepareNextBatch()
+                $rowsSecondBatch = 0
+                while ($reader.Read()) { $rowsSecondBatch++ }
+                $rowsSecondBatch | Should -Be 2
+                $reader.HasMoreData | Should -BeTrue
 
-            $reader.PrepareNextBatch()
-            $rowsSecondBatch = 0
-            while ($reader.Read()) { $rowsSecondBatch++ }
-            $rowsSecondBatch | Should -Be 2
-            $reader.HasMoreData | Should -BeTrue
+                $reader.PrepareNextBatch()
+                $rowsThirdBatch = 0
+                while ($reader.Read()) { $rowsThirdBatch++ }
+                $rowsThirdBatch | Should -Be 1
+                $reader.HasMoreData | Should -BeFalse
 
-            $reader.PrepareNextBatch()
-            $rowsThirdBatch = 0
-            while ($reader.Read()) { $rowsThirdBatch++ }
-            $rowsThirdBatch | Should -Be 1
-            $reader.HasMoreData | Should -BeFalse
+                $reader.TotalRowsRead | Should -Be 5
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    }
 
-            $reader.TotalRowsRead | Should -Be 5
+    It 'liefert bei leerer Datei keine Header und keine Daten' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
 
-            $parser.Dispose()
+            $path = Join-Path $TestDrive 'reader-empty-test.csv'
+            [System.IO.File]::WriteAllText($path, '', [System.Text.Encoding]::UTF8)
+
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, ([System.Text.Encoding]::UTF8), ([char]';'), $true
+            try {
+                $reader.Headers.Count | Should -Be 0
+                $reader.HasMoreData | Should -BeFalse
+                $reader.Read() | Should -BeFalse
+            } finally {
+                $reader.Dispose()
+            }
         }
     }
 }

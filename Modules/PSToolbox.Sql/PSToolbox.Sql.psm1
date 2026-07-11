@@ -397,18 +397,29 @@ function Initialize-PSToolboxDelimitedDataReaderType {
         Schleife (ohne Convert-DelimitedFieldValue-Aufruf) messbar
         langsam: PowerShell-Interpreter-Overhead pro Zeile/Zelle summiert
         sich bei Millionen Zellen auf mehrere Sekunden. Diese Klasse
-        kapselt TextFieldParser als IDataReader, den SqlBulkCopy direkt
-        per WriteToServer(IDataReader) konsumieren kann -- die komplette
-        Zeilen-/Zellenverarbeitung laeuft dann in JIT-kompiliertem C#
-        statt im PowerShell-Interpreter.
+        liest und parst die Datei komplett selbst (StreamReader plus
+        Zustandsmaschine -- NICHT Microsoft.VisualBasic.FileIO.
+        TextFieldParser, dessen generisches Design bei grossen Dateien
+        der dominante Kostenfaktor war) und implementiert IDataReader,
+        den SqlBulkCopy direkt per WriteToServer(IDataReader) konsumieren
+        kann. Die komplette Zeilen-/Zellenverarbeitung laeuft damit in
+        JIT-kompiliertem C# statt im PowerShell-Interpreter.
+
+        Unterstuetztes Format (entspricht dem bisherigen TextFieldParser-
+        Verhalten fuer DBISAM-Exporte): einzelnes Trennzeichen, optionale
+        doppelte Anfuehrungszeichen um Felder, verdoppelte Quotes als
+        literales Quote, eingebettete Trennzeichen/Zeilenumbrueche
+        innerhalb gequoteter Felder, Leerzeilen werden uebersprungen,
+        CRLF und LF als Zeilenende, BOM-Erkennung mit Fallback auf das
+        uebergebene Encoding. Die Kopfzeile wird im Konstruktor gelesen
+        (Headers-Property), Read() liefert nur Datensaetze.
 
         MaxRowsPerCall/PrepareNextBatch/HasMoreData ermoeglichen
         CommitEveryBatches weiterhin: WriteToServer(reader) verarbeitet
         nur bis zu MaxRowsPerCall Zeilen, dann liefert Read() false und
         die Bulk-Copy-Runde endet kontrolliert -- der Aufrufer kann
-        committen/neu beginnen und denselben Reader (der TextFieldParser
-        bleibt an seiner Position) fuer den naechsten Aufruf weiter
-        verwenden.
+        committen/neu beginnen und denselben Reader (der Stream bleibt an
+        seiner Position) fuer den naechsten Aufruf weiter verwenden.
     #>
     if (-not ("PSToolboxDelimitedDataReader" -as [type])) {
         # System.Xml wird gebraucht, obwohl im Code nicht direkt genutzt:
@@ -418,27 +429,49 @@ function Initialize-PSToolboxDelimitedDataReaderType {
         # Interface beim Implementieren von IDataReader mitaufloesen
         # koennen, sonst schlaegt die Kompilierung fehl ("Typ ... ist in
         # einer nicht referenzierten Assembly definiert").
-        Add-Type -ReferencedAssemblies @("System.Data", "System.Xml", "Microsoft.VisualBasic") -TypeDefinition @"
+        Add-Type -ReferencedAssemblies @("System.Data", "System.Xml") -TypeDefinition @"
 using System;
+using System.Collections.Generic;
 using System.Data;
-using Microsoft.VisualBasic.FileIO;
+using System.IO;
+using System.Text;
 
 public sealed class PSToolboxDelimitedDataReader : IDataReader
 {
-    private readonly TextFieldParser _parser;
-    private readonly string[] _headers;
+    private readonly StreamReader _stream;
+    private readonly char _delimiter;
     private readonly bool _emptyStringAsNull;
+    private readonly string[] _headers;
+    private string[] _pending;
+    private long _pendingRecordNumber;
     private string[] _current;
+    private long _recordNumber;
     private int _rowsThisCall;
     private int _maxRowsPerCall;
     private long _totalRowsRead;
+    private bool _disposed;
 
-    public PSToolboxDelimitedDataReader(TextFieldParser parser, string[] headers, bool emptyStringAsNull)
+    public PSToolboxDelimitedDataReader(string path, Encoding encoding, char delimiter, bool emptyStringAsNull)
     {
-        _parser = parser;
-        _headers = headers;
+        _stream = new StreamReader(path, encoding, true);
+        _delimiter = delimiter;
         _emptyStringAsNull = emptyStringAsNull;
+
+        string[] headerRecord;
+        if (TryParseRecord(out headerRecord))
+        {
+            _headers = headerRecord;
+            TryParseRecord(out _pending);
+            _pendingRecordNumber = _recordNumber;
+        }
+        else
+        {
+            _headers = new string[0];
+            _pending = null;
+        }
     }
+
+    public string[] Headers { get { return _headers; } }
 
     public int MaxRowsPerCall
     {
@@ -448,7 +481,7 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
 
     public long TotalRowsRead { get { return _totalRowsRead; } }
 
-    public bool HasMoreData { get { return !_parser.EndOfData; } }
+    public bool HasMoreData { get { return _pending != null; } }
 
     public void PrepareNextBatch()
     {
@@ -461,19 +494,110 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
         {
             return false;
         }
-        if (_parser.EndOfData)
+        if (_pending == null)
         {
             return false;
         }
-        string[] fields = _parser.ReadFields();
-        if (fields.Length != _headers.Length)
+        // Validierung erst beim Konsumieren, nicht schon beim Vorauslesen
+        // (Lookahead): so schlaegt genau der Read()-Aufruf fehl, der den
+        // fehlerhaften Datensatz liefern wuerde, nicht der davor.
+        if (_pending.Length != _headers.Length)
         {
             throw new InvalidOperationException(
-                "Zeile " + _parser.LineNumber + ": " + fields.Length + " Felder, erwartet " + _headers.Length + ".");
+                "Datensatz " + _pendingRecordNumber + ": " + _pending.Length + " Felder, erwartet " + _headers.Length + ".");
         }
-        _current = fields;
+        _current = _pending;
+        TryParseRecord(out _pending);
+        _pendingRecordNumber = _recordNumber;
         _rowsThisCall++;
         _totalRowsRead++;
+        return true;
+    }
+
+    private bool TryParseRecord(out string[] fields)
+    {
+        fields = null;
+
+        int c = _stream.Read();
+        while (c == '\r' || c == '\n')
+        {
+            c = _stream.Read();
+        }
+        if (c == -1)
+        {
+            return false;
+        }
+
+        List<string> record = new List<string>(_headers == null ? 16 : _headers.Length);
+        StringBuilder sb = new StringBuilder(64);
+        bool inQuotes = false;
+        bool fieldStart = true;
+
+        while (true)
+        {
+            if (c == -1)
+            {
+                record.Add(sb.ToString());
+                break;
+            }
+
+            char ch = (char)c;
+
+            if (inQuotes)
+            {
+                if (ch == '"')
+                {
+                    if (_stream.Peek() == '"')
+                    {
+                        _stream.Read();
+                        sb.Append('"');
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+                else
+                {
+                    sb.Append(ch);
+                }
+            }
+            else if (ch == '"' && fieldStart)
+            {
+                inQuotes = true;
+                fieldStart = false;
+            }
+            else if (ch == _delimiter)
+            {
+                record.Add(sb.ToString());
+                sb.Length = 0;
+                fieldStart = true;
+            }
+            else if (ch == '\r')
+            {
+                if (_stream.Peek() == '\n')
+                {
+                    _stream.Read();
+                }
+                record.Add(sb.ToString());
+                break;
+            }
+            else if (ch == '\n')
+            {
+                record.Add(sb.ToString());
+                break;
+            }
+            else
+            {
+                sb.Append(ch);
+                fieldStart = false;
+            }
+
+            c = _stream.Read();
+        }
+
+        _recordNumber++;
+        fields = record.ToArray();
         return true;
     }
 
@@ -524,17 +648,24 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
 
     public bool NextResult() { return false; }
 
-    public void Close() { }
+    public void Close() { Dispose(); }
 
     public DataTable GetSchemaTable() { return null; }
 
     public int Depth { get { return 0; } }
 
-    public bool IsClosed { get { return false; } }
+    public bool IsClosed { get { return _disposed; } }
 
     public int RecordsAffected { get { return -1; } }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _stream.Dispose();
+            _disposed = true;
+        }
+    }
 
     public bool GetBoolean(int i) { throw new NotSupportedException(); }
     public byte GetByte(int i) { throw new NotSupportedException(); }
@@ -621,10 +752,11 @@ function Import-DelimitedFileToSqlTable {
         unveraendert als String geschrieben (nur EmptyStringAsNull greift
         noch). Gedacht fuer den Import in eine rein NVARCHAR-typisierte
         Staging-Tabelle, gefolgt von einem satzbasierten SQL-seitigen
-        CAST/CONVERT in die eigentliche Zieltabelle: Convert-DelimitedFieldValue
-        ist als PowerShell-Advanced-Function-Aufruf pro Zelle bei sehr
-        grossen Dateien der dominante Performance-Faktor (Millionen
-        Aufrufe), selbst wenn die Zielspalte ohnehin String ist.
+        CAST/CONVERT in die eigentliche Zieltabelle. Liest die Datei ueber
+        den kompilierten PSToolboxDelimitedDataReader (eigener Parser,
+        siehe Initialize-PSToolboxDelimitedDataReaderType) statt ueber
+        TextFieldParser -- deutlich schneller, unterstuetzt dafuer nur ein
+        einzelnes Trennzeichen (Delimiter muss genau 1 Zeichen lang sein).
     .PARAMETER LogFilePath
         Optional: Ziel-Log-Datei fuer die Batch-Zwischenzeiten (siehe
         -Verbose). Ohne LogFilePath landen die Zwischenzeiten nur im
@@ -644,6 +776,8 @@ function Import-DelimitedFileToSqlTable {
     [OutputType([int])]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'CommandTimeoutSec',
         Justification = 'Wird im $newBulkCopy-Scriptblock verwendet (Closure) -- vom Analyzer nicht als Verwendung erkannt.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'LogFilePath',
+        Justification = 'Wird im $writeBatchProgress-Scriptblock verwendet (Closure) -- vom Analyzer nicht als Verwendung erkannt.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -714,6 +848,7 @@ function Import-DelimitedFileToSqlTable {
     }
 
     $parser = $null
+    $reader = $null
     $bulk = $null
     $rowCount = 0
     $batchesSinceCommit = 0
@@ -723,6 +858,11 @@ function Import-DelimitedFileToSqlTable {
         $b.DestinationTableName = $QualifiedTable
         $b.BulkCopyTimeout = $CommandTimeoutSec
         $b.BatchSize = $BatchSize
+        # EnableStreaming: bei einer IDataReader-Quelle (RawStrings-Pfad)
+        # streamt SqlBulkCopy die Zeilen, statt sie erst zu puffern --
+        # weniger Speicher, frueherer Sendebeginn. Fuer den DataTable-Pfad
+        # wirkungslos, aber unschaedlich.
+        $b.EnableStreaming = $true
         foreach ($header in $headers) {
             [void]$b.ColumnMappings.Add($header, $header)
         }
@@ -730,41 +870,34 @@ function Import-DelimitedFileToSqlTable {
     }
 
     try {
-        $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path, $Encoding)
-        $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
-        $parser.SetDelimiters($Delimiter)
-        $parser.HasFieldsEnclosedInQuotes = $true
-        $parser.TrimWhiteSpace = $false
-
-        if ($parser.EndOfData) {
-            return 0
-        }
-
-        $headers = $parser.ReadFields()
-
-        $columnTypes = @()
-        foreach ($header in $headers) {
-            if (-not $schemaTable.Columns.Contains($header)) {
-                throw "Spalte '$header' aus '$Path' existiert nicht in Zieltabelle $QualifiedTable."
-            }
-            $columnTypes += $schemaTable.Columns[$header].DataType
-        }
-
-        $bulk = & $newBulkCopy
-
         if ($RawStrings) {
-            # IDataReader statt DataTable: der komplette Zeilen-/Zellen-
-            # Durchlauf laeuft in kompiliertem C# (PSToolboxDelimitedDataReader)
-            # statt in einer PowerShell-Schleife -- bei sehr grossen Dateien
-            # ist selbst eine einfache PowerShell-Zellschleife (ohne
-            # Convert-DelimitedFieldValue) durch Interpreter-Overhead pro
-            # Iteration spuerbar langsam (siehe .DESCRIPTION von
+            # Eigener kompiliert-C#-Reader (StreamReader + Zustandsmaschine,
+            # IDataReader): parst die Datei selbst und ersetzt damit sowohl
+            # den langsamen TextFieldParser als auch jede PowerShell-
+            # Zellschleife (siehe .DESCRIPTION von
             # Initialize-PSToolboxDelimitedDataReaderType).
+            if ($Delimiter.Length -ne 1) {
+                throw "-RawStrings unterstuetzt nur ein einzelnes Trennzeichen (uebergeben: '$Delimiter')."
+            }
+
             Initialize-PSToolboxDelimitedDataReaderType
-            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $EmptyStringAsNull
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $Path, $Encoding, ([char]$Delimiter), $EmptyStringAsNull
+
+            $headers = $reader.Headers
+            if ($headers.Count -eq 0) {
+                return 0
+            }
+            foreach ($header in $headers) {
+                if (-not $schemaTable.Columns.Contains($header)) {
+                    throw "Spalte '$header' aus '$Path' existiert nicht in Zieltabelle $QualifiedTable."
+                }
+            }
+
             if ($CommitEveryBatches -gt 0) {
                 $reader.MaxRowsPerCall = $BatchSize * $CommitEveryBatches
             }
+
+            $bulk = & $newBulkCopy
 
             do {
                 $reader.PrepareNextBatch()
@@ -781,6 +914,28 @@ function Import-DelimitedFileToSqlTable {
 
             $rowCount = $reader.TotalRowsRead
         } else {
+            $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path, $Encoding)
+            $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
+            $parser.SetDelimiters($Delimiter)
+            $parser.HasFieldsEnclosedInQuotes = $true
+            $parser.TrimWhiteSpace = $false
+
+            if ($parser.EndOfData) {
+                return 0
+            }
+
+            $headers = $parser.ReadFields()
+
+            $columnTypes = @()
+            foreach ($header in $headers) {
+                if (-not $schemaTable.Columns.Contains($header)) {
+                    throw "Spalte '$header' aus '$Path' existiert nicht in Zieltabelle $QualifiedTable."
+                }
+                $columnTypes += $schemaTable.Columns[$header].DataType
+            }
+
+            $bulk = & $newBulkCopy
+
             $buffer = New-Object System.Data.DataTable
             for ($i = 0; $i -lt $headers.Count; $i++) {
                 $column = New-Object System.Data.DataColumn($headers[$i], $columnTypes[$i])
@@ -830,6 +985,7 @@ function Import-DelimitedFileToSqlTable {
     } finally {
         if ($null -ne $bulk) { $bulk.Close() }
         if ($null -ne $parser) { $parser.Dispose() }
+        if ($null -ne $reader) { $reader.Dispose() }
     }
 
     return $rowCount
