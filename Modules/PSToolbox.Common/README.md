@@ -27,6 +27,7 @@ Get-Help Merge-Hashtable -Full
 | `Invoke-WithRetry` | Fuehrt einen ScriptBlock mit Wiederholung und linearem Backoff aus |
 | `ConvertTo-SafeFileName` | Entfernt/ersetzt in Windows-Dateinamen ungueltige Zeichen |
 | `Test-PathWritable` | Prueft per Testdatei, ob ein Verzeichnis beschreibbar ist |
+| `Join-BasePath` | Wie `Join-Path`, aber ein vollstaendiger `ChildPath` (Laufwerksbuchstabe/UNC) ueberschreibt `BasePath` statt angehaengt zu werden |
 
 Jede Funktion hat vollstaendige Comment-Based-Help (`Get-Help <Funktion> -Full`)
 mit Beschreibung, Parametern und Beispielen.

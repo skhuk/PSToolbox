@@ -549,6 +549,66 @@ function Test-PathWritable {
     }
 }
 
+function Join-BasePath {
+    <#
+    .SYNOPSIS
+        Haengt einen Kindpfad an einen Basispfad an -- ausser der Kindpfad
+        ist selbst bereits vollstaendig (Laufwerksbuchstabe oder UNC),
+        dann wird er unveraendert zurueckgegeben.
+
+    .DESCRIPTION
+        Wie Join-Path, aber mit einer haeufig benoetigten Zusatzregel:
+        Konfigurationswerte fuer "Unterpfad relativ zu einem Basisverzeichnis"
+        sollen oft wahlweise auch als komplett eigener Pfad angegeben werden
+        koennen (z.B. ein Tool, das auf einem anderen Laufwerk oder einer
+        anderen Freigabe liegt als das konfigurierte Basisverzeichnis).
+
+        Ein ChildPath, der mit einem Laufwerksbuchstaben ("C:\...") oder
+        einem eigenen UNC-Pfad ("\\server\...") beginnt, gilt als
+        vollstaendig und wird unveraendert zurueckgegeben -- BasePath wird
+        in dem Fall komplett ignoriert. Alle anderen ChildPath-Werte
+        (auch ein einzelner fuehrender Backslash wie "\Tools\...", der
+        .NET-seitig laut IsPathRooted() bereits als "rooted" gilt, aber
+        keine eigenstaendige Wurzel wie Laufwerk/UNC hat) werden ganz normal
+        per Join-Path an BasePath angehaengt -- inkl. Normalisierung von
+        Trennzeichen (kein doppelter Backslash, egal ob BasePath mit oder
+        ohne trailing Separator uebergeben wird).
+
+    .PARAMETER BasePath
+        Das Basisverzeichnis (UNC-Pfad oder lokaler Windows-Pfad).
+
+    .PARAMETER ChildPath
+        Der anzuhaengende Pfad -- relativ zu BasePath, oder vollstaendig
+        (Laufwerksbuchstabe/UNC), um BasePath fuer diesen Wert zu
+        ueberschreiben.
+
+    .EXAMPLE
+        Join-BasePath -BasePath '\\server\share' -ChildPath 'Tools\x.exe'
+        # '\\server\share\Tools\x.exe'
+
+    .EXAMPLE
+        Join-BasePath -BasePath '\\server\share' -ChildPath 'C:\Tools\x.exe'
+        # 'C:\Tools\x.exe' -- BasePath wird ignoriert
+
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath
+    )
+
+    if ($ChildPath -match '^[A-Za-z]:\\|^\\\\') {
+        return $ChildPath
+    }
+
+    return Join-Path $BasePath $ChildPath
+}
+
 Export-ModuleMember -Function `
     Merge-Hashtable, `
     Merge-HashtableDeep, `
@@ -561,4 +621,5 @@ Export-ModuleMember -Function `
     Test-IsAdministrator, `
     Invoke-WithRetry, `
     ConvertTo-SafeFileName, `
-    Test-PathWritable
+    Test-PathWritable, `
+    Join-BasePath
