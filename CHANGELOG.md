@@ -11,6 +11,22 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.2.0] - 2026-07-11
+
+### Neue Funktionen
+
+| Funktion | Modul | Beschreibung |
+|---|---|---|
+| `Invoke-SqlScalarOnConnection` | PSToolbox.Sql | Fuehrt eine SQL-Skalarabfrage (z.B. `SELECT MAX(...)`) auf einer bereits offenen SqlConnection/SqlTransaction aus; wirft standardmaessig bei NULL/keinem Ergebnis, mit `-AllowNull` wird stattdessen `$null` zurueckgegeben. |
+| `Invoke-SqlScalar` | PSToolbox.Sql | Wie `Invoke-SqlScalarOnConnection`, oeffnet und schliesst dabei aber eine eigene SqlConnection ueber einen Connection-String (delegiert intern an `Invoke-SqlScalarOnConnection`). |
+
+Angefordert aus dem zenzy-Projekt (siehe `docs/MIGRATION.md`): dort wurde
+bisher eine eigene, undokumentierte Skalarabfrage-Logik gepflegt, um
+Statement-Variablen (z.B. `MaxNr` fuer eine differentielle WHERE-Clause)
+gegen SQL Server aufzuloesen.
+
+---
+
 ## [1.1.0] - 2026-07-11
 
 ### Neue Funktionen

@@ -5,7 +5,7 @@
     #
     # Wer nur einzelne Bereiche braucht, importiert stattdessen gezielt das
     # jeweilige Modul-Manifest unter Modules/ (siehe README.md).
-    ModuleVersion     = '1.1.0'
+    ModuleVersion     = '1.2.0'
     GUID              = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
     PowerShellVersion = '5.1'
     Description       = 'PSToolbox: Sammel-Manifest, das alle projektneutralen PSToolbox-Module (Common, Logging, Sql) gemeinsam laedt.'
@@ -56,7 +56,9 @@
         'Get-SqlEmptySchemaTable',
         'Convert-DelimitedFieldValue',
         'Import-DelimitedFileToSqlTable',
-        'Write-SqlTableLogEntry'
+        'Write-SqlTableLogEntry',
+        'Invoke-SqlScalarOnConnection',
+        'Invoke-SqlScalar'
     )
 
     CmdletsToExport   = @()

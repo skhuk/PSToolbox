@@ -631,4 +631,122 @@ function Write-SqlTableLogEntry {
     }
 }
 
-Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry
+function Invoke-SqlScalarOnConnection {
+    <#
+    .SYNOPSIS
+        Fuehrt eine SQL-Skalarabfrage auf einer bereits offenen
+        SqlConnection aus.
+    .DESCRIPTION
+        Anders als Invoke-SqlScalar (eigener Connection-String, oeffnet
+        und schliesst die Connection selbst) fuegt sich diese Funktion
+        in eine bereits laufende Unit of Work ein: erwartet eine offene
+        SqlConnection und optional eine SqlTransaction, z.B. um waehrend
+        eines Imports einen Wert aus der Zieldatenbank zu lesen (etwa
+        "SELECT MAX(...)" fuer eine differentielle WHERE-Clause). Wirft
+        standardmaessig einen Fehler, wenn das Ergebnis NULL/kein
+        Datensatz ist - mit -AllowNull wird stattdessen $null
+        zurueckgegeben.
+    .PARAMETER Connection
+        Eine offene SqlConnection.
+    .PARAMETER Transaction
+        Optionale SqlTransaction.
+    .PARAMETER Query
+        Das auszufuehrende SELECT-Statement (skalares Ergebnis erwartet).
+    .PARAMETER CommandTimeoutSec
+        Timeout in Sekunden (Default 300).
+    .PARAMETER AllowNull
+        Wenn gesetzt, wird bei NULL/keinem Ergebnis $null zurueckgegeben
+        statt eines Fehlers.
+    .EXAMPLE
+        Invoke-SqlScalarOnConnection -Connection $conn -Transaction $tx -Query "SELECT MAX(Nr) FROM zenzy.Abrechnungen"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Data.SqlClient.SqlConnection]$Connection,
+
+        [System.Data.SqlClient.SqlTransaction]$Transaction,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Query,
+
+        [int]$CommandTimeoutSec = 300,
+
+        [switch]$AllowNull
+    )
+
+    $command = $null
+    try {
+        $command = $Connection.CreateCommand()
+        if ($null -ne $Transaction) {
+            $command.Transaction = $Transaction
+        }
+        $command.CommandText = $Query
+        $command.CommandTimeout = $CommandTimeoutSec
+        $value = $command.ExecuteScalar()
+
+        if (($null -eq $value) -or ($value -is [System.DBNull])) {
+            if ($AllowNull) {
+                return $null
+            }
+            throw "Skalarabfrage lieferte NULL/kein Ergebnis: $Query"
+        }
+
+        return $value
+    } finally {
+        if ($null -ne $command) { $command.Dispose() }
+    }
+}
+
+function Invoke-SqlScalar {
+    <#
+    .SYNOPSIS
+        Fuehrt eine SQL-Skalarabfrage aus und liefert das Ergebnis --
+        oeffnet und schliesst dabei eine eigene SqlConnection.
+    .DESCRIPTION
+        Eigenstaendig aufrufbare Variante fuer einzelne Skalarabfragen
+        (z.B. "SELECT MAX(...) FROM ..."), die keine bereits offene
+        Connection/Transaction voraussetzt: oeffnet per ConnectionString
+        eine eigene SqlConnection, delegiert die Ausfuehrung an
+        Invoke-SqlScalarOnConnection und schliesst die Connection in
+        jedem Fall (auch bei Fehlern) wieder. Fuer den Einsatz INNERHALB
+        einer bereits laufenden Unit of Work (offene
+        Connection/Transaction) siehe stattdessen
+        Invoke-SqlScalarOnConnection direkt.
+    .PARAMETER ConnectionString
+        ADO.NET-Connection-String zur SQL-Server-Datenbank (z.B. aus
+        New-SqlServerConnectionString).
+    .PARAMETER Query
+        Das auszufuehrende SELECT-Statement (skalares Ergebnis erwartet).
+    .PARAMETER CommandTimeoutSec
+        Timeout in Sekunden (Default 300).
+    .PARAMETER AllowNull
+        Wenn gesetzt, wird bei NULL/keinem Ergebnis $null zurueckgegeben
+        statt eines Fehlers.
+    .EXAMPLE
+        Invoke-SqlScalar -ConnectionString $connStr -Query "SELECT MAX(Nr) FROM zenzy.Abrechnungen"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Query,
+
+        [int]$CommandTimeoutSec = 300,
+
+        [switch]$AllowNull
+    )
+
+    $connection = $null
+    try {
+        $connection = New-Object System.Data.SqlClient.SqlConnection($ConnectionString)
+        $connection.Open()
+        return Invoke-SqlScalarOnConnection -Connection $connection -Query $Query -CommandTimeoutSec $CommandTimeoutSec -AllowNull:$AllowNull
+    } finally {
+        if ($null -ne $connection) { $connection.Dispose() }
+    }
+}
+
+Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar
