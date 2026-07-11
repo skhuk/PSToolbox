@@ -413,6 +413,12 @@ function Import-DelimitedFileToSqlTable {
         Die SqlTransaction, in der der Import laufen soll.
     .PARAMETER Delimiter
         Feldtrennzeichen (Default ";").
+    .PARAMETER Encoding
+        Zeichenkodierung der Quelldatei (Default System.Text.Encoding.Default,
+        die System-ANSI-Codepage -- passend zu Tools, die "Encoding Default"
+        beim Schreiben verwenden, z.B. DBISAM-Exporte). Ohne explizite Angabe
+        wuerde TextFieldParser UTF-8 annehmen, was ANSI-kodierte Umlaute
+        (z.B. "ö" als 0xF6) falsch dekodiert.
     .PARAMETER BatchSize
         SqlBulkCopy-Batchgroesse (Default 5000).
     .PARAMETER CommandTimeoutSec
@@ -449,6 +455,8 @@ function Import-DelimitedFileToSqlTable {
 
         [string]$Delimiter = ";",
 
+        [System.Text.Encoding]$Encoding = [System.Text.Encoding]::Default,
+
         [int]$BatchSize = 5000,
 
         [int]$CommandTimeoutSec = 300,
@@ -476,7 +484,7 @@ function Import-DelimitedFileToSqlTable {
     $rowCount = 0
 
     try {
-        $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path)
+        $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path, $Encoding)
         $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
         $parser.SetDelimiters($Delimiter)
         $parser.HasFieldsEnclosedInQuotes = $true
