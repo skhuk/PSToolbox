@@ -1,0 +1,35 @@
+# --- Logs & Laufzeit-Artefakte ---
+# (PSToolbox.Logging erzeugt .log-Dateien und rotierte Generationen .log.1 ... .log.N)
+*.log
+*.log.[0-9]
+*.log.[0-9][0-9]
+Logs/
+logs/
+
+# --- Secrets & lokale Konfiguration ---
+# (Muster aus den Modul-Beispielen: Basis-Config .psd1 + Override per secrets.json)
+secrets.json
+*.secrets.json
+*.secrets.psd1
+*.local.psd1
+
+# --- Test-Ergebnisse (Pester) ---
+TestResults/
+testResults.xml
+coverage.xml
+
+# --- Temporaere Dateien ---
+*.tmp
+*~
+.pstoolbox_writetest_*.tmp
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.suo
+*.user
+
+# --- Betriebssystem ---
+Thumbs.db
+Desktop.ini
+.DS_Store
