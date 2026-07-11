@@ -6,6 +6,13 @@
     Get-SqlEmptySchemaTable, Import-DelimitedFileToSqlTable,
     Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar)
     benoetigen einen SQL Server und werden hier nicht ausgefuehrt.
+
+    Ausnahme: PSToolboxDelimitedDataReader (der IDataReader hinter
+    Import-DelimitedFileToSqlTable -RawStrings) braucht KEINE SqlConnection
+    -- nur TextFieldParser. Der wird deshalb direkt getestet, inkl. des
+    Add-Type-Kompilierens selbst (InModuleScope, da nicht exportiert): ein
+    fehlender Assembly-Verweis (z.B. System.Xml fuer IDataReader.GetSchemaTable()'s
+    DataTable-Rueckgabetyp) faellt so schon hier auf statt erst produktiv.
 #>
 
 BeforeAll {
@@ -127,5 +134,98 @@ Describe 'Convert-DelimitedFieldValue' {
 
     It 'parst TimeSpan invariant' {
         Convert-DelimitedFieldValue -Value '01:30:00' -TargetType ([timespan]) | Should -Be ([timespan]'01:30:00')
+    }
+}
+
+Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
+    BeforeAll {
+        Add-Type -AssemblyName 'Microsoft.VisualBasic'
+    }
+
+    It 'Initialize-PSToolboxDelimitedDataReaderType kompiliert ohne Fehler (auch mehrfach aufgerufen)' {
+        InModuleScope 'PSToolbox.Sql' {
+            { Initialize-PSToolboxDelimitedDataReaderType } | Should -Not -Throw
+            { Initialize-PSToolboxDelimitedDataReaderType } | Should -Not -Throw
+            ('PSToolboxDelimitedDataReader' -as [type]) | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    It 'liest Zeilen als Strings, leerer String wird zu DBNull' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
+
+            $path = Join-Path $TestDrive 'reader-test.csv'
+            Set-Content -Path $path -Encoding UTF8 -Value @(
+                'Name;Wert',
+                'Alice;1',
+                'Bob;'
+            )
+
+            $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($path, [System.Text.Encoding]::UTF8)
+            $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
+            $parser.SetDelimiters(';')
+            $parser.HasFieldsEnclosedInQuotes = $true
+            $headers = $parser.ReadFields()
+
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $true
+
+            $reader.FieldCount | Should -Be 2
+            $reader.GetName(0) | Should -Be 'Name'
+            $reader.GetOrdinal('Wert') | Should -Be 1
+
+            $reader.Read() | Should -BeTrue
+            $reader.GetValue(0) | Should -Be 'Alice'
+            $reader.GetValue(1) | Should -Be '1'
+
+            $reader.Read() | Should -BeTrue
+            $reader.GetValue(0) | Should -Be 'Bob'
+            $reader.IsDBNull(1) | Should -BeTrue
+
+            $reader.Read() | Should -BeFalse
+            $reader.TotalRowsRead | Should -Be 2
+
+            $parser.Dispose()
+        }
+    }
+
+    It 'MaxRowsPerCall/PrepareNextBatch/HasMoreData erlauben chunkweises Lesen (fuer CommitEveryBatches)' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
+
+            $path = Join-Path $TestDrive 'reader-chunk-test.csv'
+            $lines = @('Nr') + (1..5 | ForEach-Object { "$_" })
+            Set-Content -Path $path -Encoding UTF8 -Value $lines
+
+            $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($path, [System.Text.Encoding]::UTF8)
+            $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
+            $parser.SetDelimiters(';')
+            $parser.HasFieldsEnclosedInQuotes = $true
+            $headers = $parser.ReadFields()
+
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $true
+            $reader.MaxRowsPerCall = 2
+
+            $reader.PrepareNextBatch()
+            $rowsFirstBatch = 0
+            while ($reader.Read()) { $rowsFirstBatch++ }
+            $rowsFirstBatch | Should -Be 2
+            $reader.HasMoreData | Should -BeTrue
+
+            $reader.PrepareNextBatch()
+            $rowsSecondBatch = 0
+            while ($reader.Read()) { $rowsSecondBatch++ }
+            $rowsSecondBatch | Should -Be 2
+            $reader.HasMoreData | Should -BeTrue
+
+            $reader.PrepareNextBatch()
+            $rowsThirdBatch = 0
+            while ($reader.Read()) { $rowsThirdBatch++ }
+            $rowsThirdBatch | Should -Be 1
+            $reader.HasMoreData | Should -BeFalse
+
+            $reader.TotalRowsRead | Should -Be 5
+
+            $parser.Dispose()
+        }
     }
 }
