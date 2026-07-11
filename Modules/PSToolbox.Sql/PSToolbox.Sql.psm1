@@ -411,7 +411,14 @@ function Initialize-PSToolboxDelimitedDataReaderType {
         verwenden.
     #>
     if (-not ("PSToolboxDelimitedDataReader" -as [type])) {
-        Add-Type -ReferencedAssemblies @("System.Data", "Microsoft.VisualBasic") -TypeDefinition @"
+        # System.Xml wird gebraucht, obwohl im Code nicht direkt genutzt:
+        # IDataReader.GetSchemaTable() gibt DataTable zurueck, und
+        # DataTable implementiert IXmlSerializable (System.Xml) -- unter
+        # Windows PowerShell 5.1 (Desktop-CLR) muss der Compiler dieses
+        # Interface beim Implementieren von IDataReader mitaufloesen
+        # koennen, sonst schlaegt die Kompilierung fehl ("Typ ... ist in
+        # einer nicht referenzierten Assembly definiert").
+        Add-Type -ReferencedAssemblies @("System.Data", "System.Xml", "Microsoft.VisualBasic") -TypeDefinition @"
 using System;
 using System.Data;
 using Microsoft.VisualBasic.FileIO;
