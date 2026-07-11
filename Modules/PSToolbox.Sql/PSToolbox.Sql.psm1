@@ -448,6 +448,15 @@ function Import-DelimitedFileToSqlTable {
         Siehe Convert-DelimitedFieldValue.
     .PARAMETER FalseValues
         Siehe Convert-DelimitedFieldValue.
+    .PARAMETER RawStrings
+        Ueberspringt Convert-DelimitedFieldValue komplett -- jede Zelle wird
+        unveraendert als String geschrieben (nur EmptyStringAsNull greift
+        noch). Gedacht fuer den Import in eine rein NVARCHAR-typisierte
+        Staging-Tabelle, gefolgt von einem satzbasierten SQL-seitigen
+        CAST/CONVERT in die eigentliche Zieltabelle: Convert-DelimitedFieldValue
+        ist als PowerShell-Advanced-Function-Aufruf pro Zelle bei sehr
+        grossen Dateien der dominante Performance-Faktor (Millionen
+        Aufrufe), selbst wenn die Zielspalte ohnehin String ist.
     .OUTPUTS
         Anzahl importierter Zeilen (int).
     .EXAMPLE
@@ -488,7 +497,9 @@ function Import-DelimitedFileToSqlTable {
 
         [string[]]$TrueValues = @("1", "true"),
 
-        [string[]]$FalseValues = @("0", "false")
+        [string[]]$FalseValues = @("0", "false"),
+
+        [switch]$RawStrings
     )
 
     Add-Type -AssemblyName "Microsoft.VisualBasic"
@@ -551,11 +562,22 @@ function Import-DelimitedFileToSqlTable {
             }
 
             $row = $buffer.NewRow()
-            for ($i = 0; $i -lt $headers.Count; $i++) {
-                try {
-                    $row[$i] = Convert-DelimitedFieldValue -Value $fields[$i] -TargetType $columnTypes[$i] -EmptyStringAsNull $EmptyStringAsNull -NumberCulture $NumberCulture -DateCulture $DateCulture -TrueValues $TrueValues -FalseValues $FalseValues
-                } catch {
-                    throw "Zeile $($parser.LineNumber), Spalte '$($headers[$i])' in '$Path': $($_.Exception.Message)"
+            if ($RawStrings) {
+                for ($i = 0; $i -lt $headers.Count; $i++) {
+                    $value = $fields[$i]
+                    if ($EmptyStringAsNull -and [string]::IsNullOrEmpty($value)) {
+                        $row[$i] = [System.DBNull]::Value
+                    } else {
+                        $row[$i] = $value
+                    }
+                }
+            } else {
+                for ($i = 0; $i -lt $headers.Count; $i++) {
+                    try {
+                        $row[$i] = Convert-DelimitedFieldValue -Value $fields[$i] -TargetType $columnTypes[$i] -EmptyStringAsNull $EmptyStringAsNull -NumberCulture $NumberCulture -DateCulture $DateCulture -TrueValues $TrueValues -FalseValues $FalseValues
+                    } catch {
+                        throw "Zeile $($parser.LineNumber), Spalte '$($headers[$i])' in '$Path': $($_.Exception.Message)"
+                    }
                 }
             }
             $buffer.Rows.Add($row)
