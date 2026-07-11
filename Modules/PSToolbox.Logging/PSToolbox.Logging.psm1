@@ -648,6 +648,8 @@ function Send-LogAlert {
         Send-LogAlert -Message 'Kritischer Fehler im Nachtlauf' -Severity Critical
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '',
+        Justification = 'Platzhalter-Funktion: Parameter definieren die kuenftige Schnittstelle, Implementierung folgt (siehe TODO.md).')]
     param(
         [Parameter(Mandatory)]
         [string]$Message,
@@ -686,6 +688,8 @@ function Export-LogArchive {
         Export-LogArchive -LogDirectory 'C:\Logs\MeinTool' -ArchivePath 'C:\Logs\Archiv\2026-06.zip' -OlderThanDays 30
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '',
+        Justification = 'Platzhalter-Funktion: Parameter definieren die kuenftige Schnittstelle, Implementierung folgt (siehe TODO.md).')]
     param(
         [Parameter(Mandatory)]
         [string]$LogDirectory,

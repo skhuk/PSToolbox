@@ -71,6 +71,7 @@ function Format-SqlLiteral {
         $sql = "WHERE Nr > " + (Format-SqlLiteral -Value $maxNr)
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [AllowNull()]
@@ -172,6 +173,7 @@ function New-SqlServerConnectionString {
         New-SqlServerConnectionString -Instance "srv\i1" -Database "MeineDB" -AuthMode SqlLogin -User "app" -Password "geheim"
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Instance,
@@ -428,6 +430,7 @@ function Import-DelimitedFileToSqlTable {
         Import-DelimitedFileToSqlTable -Path "C:\export\Kunden.csv" -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction $tx
     #>
     [CmdletBinding()]
+    [OutputType([int])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
