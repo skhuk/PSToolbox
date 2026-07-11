@@ -625,6 +625,16 @@ function Import-DelimitedFileToSqlTable {
         ist als PowerShell-Advanced-Function-Aufruf pro Zelle bei sehr
         grossen Dateien der dominante Performance-Faktor (Millionen
         Aufrufe), selbst wenn die Zielspalte ohnehin String ist.
+    .PARAMETER LogFilePath
+        Optional: Ziel-Log-Datei fuer die Batch-Zwischenzeiten (siehe
+        -Verbose). Ohne LogFilePath landen die Zwischenzeiten nur im
+        Verbose-Stream (Write-Verbose), nicht in einer Datei.
+    .PARAMETER Verbose
+        Gemeinsamer Parameter (durch [CmdletBinding()]): schreibt nach
+        jedem Batch eine Zwischenzeile mit bisheriger Zeilenzahl, seit
+        Start vergangener Zeit und Zeit seit dem letzten Batch -- sowohl
+        in den Verbose-Stream als auch (falls LogFilePath gesetzt) in die
+        Log-Datei.
     .OUTPUTS
         Anzahl importierter Zeilen (int).
     .EXAMPLE
@@ -667,10 +677,36 @@ function Import-DelimitedFileToSqlTable {
 
         [string[]]$FalseValues = @("0", "false"),
 
-        [switch]$RawStrings
+        [switch]$RawStrings,
+
+        [string]$LogFilePath
     )
 
     Add-Type -AssemblyName "Microsoft.VisualBasic"
+
+    # -Verbose ist ueber [CmdletBinding()] als gemeinsamer Parameter
+    # verfuegbar -- $VerbosePreference ist in diesem Funktions-Scope
+    # 'Continue', wenn der Aufrufer -Verbose:$true uebergeben hat.
+    $isVerbose = ($VerbosePreference -eq 'Continue')
+    $batchStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $overallStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    $writeBatchProgress = {
+        param([int]$RowsSoFar)
+
+        if (-not $isVerbose) { return }
+
+        $batchSeconds = [math]::Round($batchStopwatch.Elapsed.TotalSeconds, 1)
+        $totalSeconds = [math]::Round($overallStopwatch.Elapsed.TotalSeconds, 1)
+        $message = "Import-DelimitedFileToSqlTable '$QualifiedTable': Batch geschrieben, $RowsSoFar Zeile(n) bisher. Batch ${batchSeconds}s, gesamt ${totalSeconds}s."
+
+        Write-Verbose $message
+        if (-not [string]::IsNullOrEmpty($LogFilePath)) {
+            Write-LogEntry -Message $message -LogFilePath $LogFilePath
+        }
+
+        $batchStopwatch.Restart()
+    }
 
     $schemaTable = Get-SqlEmptySchemaTable -QualifiedTable $QualifiedTable -Connection $Connection -Transaction $Transaction.Value
     if ($null -eq $schemaTable) {
@@ -733,6 +769,7 @@ function Import-DelimitedFileToSqlTable {
             do {
                 $reader.PrepareNextBatch()
                 $bulk.WriteToServer($reader)
+                & $writeBatchProgress $reader.TotalRowsRead
 
                 if (($CommitEveryBatches -gt 0) -and $reader.HasMoreData) {
                     $bulk.Close()
@@ -772,6 +809,7 @@ function Import-DelimitedFileToSqlTable {
                     $bulk.WriteToServer($buffer)
                     $buffer.Clear()
                     $batchesSinceCommit++
+                    & $writeBatchProgress $rowCount
 
                     if (($CommitEveryBatches -gt 0) -and ($batchesSinceCommit -ge $CommitEveryBatches)) {
                         $bulk.Close()
@@ -786,6 +824,7 @@ function Import-DelimitedFileToSqlTable {
             if ($buffer.Rows.Count -gt 0) {
                 $bulk.WriteToServer($buffer)
                 $buffer.Clear()
+                & $writeBatchProgress $rowCount
             }
         }
     } finally {
