@@ -26,6 +26,8 @@ Get-Help Import-DelimitedFileToSqlTable -Full
 | `Convert-DelimitedFieldValue` | Textwert -> typisierter .NET-Wert (konfigurierbare Kultur, Null-/Bool-Semantik) |
 | `Import-DelimitedFileToSqlTable` | CSV/getrennte Datei per SqlBulkCopy importieren (TextFieldParser, konfigurierbares Trennzeichen) |
 | `Write-SqlTableLogEntry` | Log-Zeile in eine frei konfigurierbare Tabelle schreiben, innerhalb einer bereits offenen Connection/Transaction |
+| `Invoke-SqlScalarOnConnection` | Skalarabfrage (z.B. `SELECT MAX(...)`) auf einer bereits offenen Connection/Transaction ausfuehren |
+| `Invoke-SqlScalar` | Skalarabfrage per eigenem Connection-String ausfuehren (oeffnet/schliesst die Connection selbst) |
 
 Jede Funktion hat vollstaendige Comment-Based-Help (`Get-Help <Funktion> -Full`).
 
@@ -35,6 +37,14 @@ einen Connection-String und schreibt in ein festes Lifecycle-Schema
 (hostname/processname/state/severity/...). `Write-SqlTableLogEntry` nutzt
 eine bereits offene Connection/Transaction (z. B. innerhalb eines laufenden
 Imports) und ein frei benennbares Level/Source/Message-Schema.
+
+`Invoke-SqlScalar` und `Invoke-SqlScalarOnConnection` folgen demselben
+Muster fuer lesende Skalarabfragen: `Invoke-SqlScalar` oeffnet/schliesst
+eine eigene Connection (eigenstaendiger Aufruf), `Invoke-SqlScalarOnConnection`
+nutzt eine bereits offene Connection/Transaction (z. B. um waehrend eines
+Imports einen `MAX(...)`-Wert fuer eine differentielle WHERE-Clause zu
+lesen, bevor eine eigene Transaktion beginnt). `Invoke-SqlScalar` delegiert
+intern an `Invoke-SqlScalarOnConnection`.
 
 ## Sicherheitshinweis: dynamisches SQL
 

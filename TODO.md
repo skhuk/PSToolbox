@@ -29,8 +29,9 @@ Funktionen).
 - [ ] **Integrationstests** fuer die SqlConnection-gebundenen Funktionen
   (`Invoke-SqlBatchScript`, `Get-SqlEmptySchemaTable`,
   `Import-DelimitedFileToSqlTable`, `Write-SqlTableLogEntry`,
-  `Write-SqlLogEntry`) - z. B. gegen ein SQL-Server-Container-Image in der
-  CI. Die reinen Logik-Funktionen sind bereits per Pester abgedeckt.
+  `Write-SqlLogEntry`, `Invoke-SqlScalarOnConnection`, `Invoke-SqlScalar`)
+  - z. B. gegen ein SQL-Server-Container-Image in der CI. Die reinen
+  Logik-Funktionen sind bereits per Pester abgedeckt.
 
 ## Prozess
 

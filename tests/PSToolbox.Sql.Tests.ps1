@@ -4,8 +4,8 @@
     Nur reine Logik (Validierung, Formatierung, Konvertierung, Connection-
     Strings) - Funktionen mit SqlConnection-Abhaengigkeit (Invoke-SqlBatchScript,
     Get-SqlEmptySchemaTable, Import-DelimitedFileToSqlTable,
-    Write-SqlTableLogEntry) benoetigen einen SQL Server und werden hier
-    nicht ausgefuehrt.
+    Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar)
+    benoetigen einen SQL Server und werden hier nicht ausgefuehrt.
 #>
 
 BeforeAll {
