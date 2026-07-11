@@ -192,3 +192,54 @@ Describe 'Initialize-LoggingFromConfig' {
         { Initialize-LoggingFromConfig -Config $cfg } | Should -Throw
     }
 }
+
+Describe 'Write-SqlLogEntry' {
+    It 'ist fail-soft: ein SQL-Fehler wirft nicht, sondern landet als Warnung in der Logdatei' {
+        $logPath = Join-Path $TestDrive 'sqlentry.log'
+        { Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -Description 'x' `
+            -ConnectionString 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1' `
+            -LogFilePath $logPath } | Should -Not -Throw
+
+        Get-Content -Path $logPath -Raw | Should -Match 'SQL-Logging fehlgeschlagen \(State=RUNNING\)'
+    }
+
+    It 'tut nichts, wenn kein LogFilePath fuer den Fallback angegeben ist' {
+        { Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' `
+            -ConnectionString 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1' } |
+            Should -Not -Throw
+    }
+}
+
+Describe 'Write-RunStart / Write-RunEnd' {
+    It 'Write-RunStart tut nichts, wenn kein SqlConnectionString konfiguriert ist' {
+        $dir = Join-Path $TestDrive 'runstart_nosql'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0 -ProcessName 'Test'
+        { Write-RunStart } | Should -Not -Throw
+    }
+
+    It 'Write-RunStart ist fail-soft und schreibt eine Warnung in die Logdatei' {
+        $dir = Join-Path $TestDrive 'runstart_sql'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0 -ProcessName 'Test' `
+            -SqlConnectionString 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1'
+        { Write-RunStart } | Should -Not -Throw
+
+        $logFile = Get-ChildItem -Path $dir -Filter 'Log_*.log' | Select-Object -First 1
+        Get-Content -Path $logFile.FullName -Raw | Should -Match 'State=RUNNING'
+    }
+
+    It 'Write-RunEnd leitet State/Severity korrekt ab (COMPLETED/FAILED/TERMINATED)' {
+        $dir = Join-Path $TestDrive 'runend'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0 -ProcessName 'Test' `
+            -SqlConnectionString 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1'
+        $logFile = Get-ChildItem -Path $dir -Filter 'Log_*.log' | Select-Object -First 1
+
+        Write-RunEnd -RunErrors 0
+        Get-Content -Path $logFile.FullName -Raw | Should -Match 'State=COMPLETED'
+
+        Write-RunEnd -RunErrors 2
+        Get-Content -Path $logFile.FullName -Raw | Should -Match 'State=FAILED'
+
+        Write-RunEnd -Terminated
+        Get-Content -Path $logFile.FullName -Raw | Should -Match 'State=TERMINATED'
+    }
+}

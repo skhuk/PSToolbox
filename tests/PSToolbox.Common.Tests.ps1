@@ -162,3 +162,89 @@ Describe 'ConvertTo-SafeFileName' {
         ConvertTo-SafeFileName -Name 'a:b' -Replacement '-' | Should -Be 'a-b'
     }
 }
+
+Describe 'Get-DirectorySize' {
+    It 'gibt 0 fuer ein leeres Verzeichnis zurueck' {
+        $dir = Join-Path $TestDrive 'EmptyDir'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Get-DirectorySize -Path $dir | Should -Be 0
+    }
+
+    It 'summiert Dateigroessen rekursiv' {
+        $dir    = Join-Path $TestDrive 'SizeDir'
+        $subDir = Join-Path $dir 'Sub'
+        New-Item -ItemType Directory -Path $subDir -Force | Out-Null
+        Set-Content -Path (Join-Path $dir 'a.txt')    -Value 'AAAAA'      -Encoding ASCII # 5 Bytes
+        Set-Content -Path (Join-Path $subDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII # 10 Bytes
+        Get-DirectorySize -Path $dir | Should -Be 15
+    }
+
+    It 'gibt 0 zurueck fuer nicht-existierenden Pfad und wirft keine Exception' {
+        { Get-DirectorySize -Path (Join-Path $TestDrive 'GibtEsNicht') -WarningAction SilentlyContinue } |
+            Should -Not -Throw
+        Get-DirectorySize -Path (Join-Path $TestDrive 'GibtEsNicht') -WarningAction SilentlyContinue |
+            Should -Be 0
+    }
+}
+
+Describe 'Get-DiskFreeSpaceInfo' {
+    It 'liefert FreeBytes und TotalBytes groesser 0 fuer einen existierenden Pfad' {
+        $info = Get-DiskFreeSpaceInfo -Path $TestDrive
+        $info.FreeBytes  | Should -BeGreaterThan 0
+        $info.TotalBytes | Should -BeGreaterThan 0
+        $info.TotalBytes | Should -BeGreaterOrEqual $info.FreeBytes
+    }
+}
+
+Describe 'Test-IsAdministrator' {
+    It 'gibt einen Boolean zurueck, ohne zu werfen' {
+        { Test-IsAdministrator } | Should -Not -Throw
+        Test-IsAdministrator | Should -BeOfType [bool]
+    }
+}
+
+Describe 'Invoke-WithRetry' {
+    It 'gibt den Rueckgabewert bei sofortigem Erfolg zurueck (kein Retry)' {
+        $script:calls = 0
+        $result = Invoke-WithRetry -ScriptBlock { $script:calls++; 'ok' }
+        $result | Should -Be 'ok'
+        $script:calls | Should -Be 1
+    }
+
+    It 'wiederholt bei Fehler und gibt bei spaeterem Erfolg den Wert zurueck' {
+        $script:calls = 0
+        $result = Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -ScriptBlock {
+            $script:calls++
+            if ($script:calls -lt 2) { throw 'transient' }
+            'ok-nach-retry'
+        }
+        $result | Should -Be 'ok-nach-retry'
+        $script:calls | Should -Be 2
+    }
+
+    It 'wirft die letzte Exception, wenn alle Versuche fehlschlagen' {
+        $script:calls = 0
+        { Invoke-WithRetry -MaxAttempts 2 -DelaySeconds 0 -ScriptBlock { $script:calls++; throw 'immer fehlerhaft' } } |
+            Should -Throw 'immer fehlerhaft'
+        $script:calls | Should -Be 2
+    }
+}
+
+Describe 'Test-PathWritable' {
+    It 'gibt $true fuer ein beschreibbares Verzeichnis zurueck' {
+        $dir = Join-Path $TestDrive 'Writable'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Test-PathWritable -Path $dir | Should -BeTrue
+    }
+
+    It 'gibt $false zurueck, wenn der Pfad nicht existiert' {
+        Test-PathWritable -Path (Join-Path $TestDrive 'GibtEsNicht') | Should -BeFalse
+    }
+
+    It 'hinterlaesst keine Testdatei im Verzeichnis' {
+        $dir = Join-Path $TestDrive 'WritableClean'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Test-PathWritable -Path $dir | Should -BeTrue
+        @(Get-ChildItem -Path $dir -Filter '.pstoolbox_writetest_*.tmp').Count | Should -Be 0
+    }
+}
