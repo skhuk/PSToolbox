@@ -443,6 +443,7 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
     private readonly bool _emptyStringAsNull;
     private readonly string[] _headers;
     private string[] _pending;
+    private long _pendingRecordNumber;
     private string[] _current;
     private long _recordNumber;
     private int _rowsThisCall;
@@ -460,7 +461,8 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
         if (TryParseRecord(out headerRecord))
         {
             _headers = headerRecord;
-            _pending = ParseNextValidated();
+            TryParseRecord(out _pending);
+            _pendingRecordNumber = _recordNumber;
         }
         else
         {
@@ -496,26 +498,20 @@ public sealed class PSToolboxDelimitedDataReader : IDataReader
         {
             return false;
         }
+        // Validierung erst beim Konsumieren, nicht schon beim Vorauslesen
+        // (Lookahead): so schlaegt genau der Read()-Aufruf fehl, der den
+        // fehlerhaften Datensatz liefern wuerde, nicht der davor.
+        if (_pending.Length != _headers.Length)
+        {
+            throw new InvalidOperationException(
+                "Datensatz " + _pendingRecordNumber + ": " + _pending.Length + " Felder, erwartet " + _headers.Length + ".");
+        }
         _current = _pending;
-        _pending = ParseNextValidated();
+        TryParseRecord(out _pending);
+        _pendingRecordNumber = _recordNumber;
         _rowsThisCall++;
         _totalRowsRead++;
         return true;
-    }
-
-    private string[] ParseNextValidated()
-    {
-        string[] fields;
-        if (!TryParseRecord(out fields))
-        {
-            return null;
-        }
-        if (fields.Length != _headers.Length)
-        {
-            throw new InvalidOperationException(
-                "Datensatz " + _recordNumber + ": " + fields.Length + " Felder, erwartet " + _headers.Length + ".");
-        }
-        return fields;
     }
 
     private bool TryParseRecord(out string[] fields)
