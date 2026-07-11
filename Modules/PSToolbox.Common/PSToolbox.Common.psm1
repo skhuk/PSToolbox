@@ -382,9 +382,12 @@ function Get-DiskFreeSpaceInfo {
         [string]$Path
     )
 
-    [ulong]$free  = 0
-    [ulong]$total = 0
-    [ulong]$dummy = 0
+    # [UInt64] statt [ulong]: "ulong" ist in Windows PowerShell 5.1 kein
+    # registrierter Typ-Beschleuniger (erst ab PowerShell 6+), [UInt64]
+    # funktioniert in beiden.
+    [UInt64]$free  = 0
+    [UInt64]$total = 0
+    [UInt64]$dummy = 0
     $ok = [PSToolboxDiskSpace]::GetDiskFreeSpaceEx($Path, [ref]$free, [ref]$total, [ref]$dummy)
     if (-not $ok) {
         throw "GetDiskFreeSpaceEx fehlgeschlagen fuer Pfad '$Path' (Win32-Fehler: $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))"

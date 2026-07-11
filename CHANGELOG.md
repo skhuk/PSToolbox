@@ -11,6 +11,23 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.3.1] - 2026-07-11
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-DiskFreeSpaceInfo` | PSToolbox.Common | Bugfix: `[ulong]` ist in Windows PowerShell 5.1 kein registrierter Typ-Beschleuniger (erst ab PowerShell 6+) und liess die Funktion mit `Unable to find type [ulong]` fehlschlagen. Auf `[UInt64]` umgestellt, funktioniert in 5.1 und 7. |
+
+### Sonstiges
+
+- Pester-Test fuer `Get-DirectorySize` korrigiert: `Set-Content` haengt ohne
+  `-NoNewline` einen Zeilenumbruch an, wodurch der Test mit falschem
+  Erwartungswert (15 statt tatsaechlich 19 Bytes) fehlschlug. Kein
+  Funktionsfehler, nur ein Testfehler.
+
+---
+
 ## [1.3.0] - 2026-07-11
 
 ### Neue Funktionen

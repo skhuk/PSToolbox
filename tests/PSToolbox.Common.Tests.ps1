@@ -174,8 +174,8 @@ Describe 'Get-DirectorySize' {
         $dir    = Join-Path $TestDrive 'SizeDir'
         $subDir = Join-Path $dir 'Sub'
         New-Item -ItemType Directory -Path $subDir -Force | Out-Null
-        Set-Content -Path (Join-Path $dir 'a.txt')    -Value 'AAAAA'      -Encoding ASCII # 5 Bytes
-        Set-Content -Path (Join-Path $subDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII # 10 Bytes
+        Set-Content -Path (Join-Path $dir 'a.txt')    -Value 'AAAAA'      -Encoding ASCII -NoNewline # 5 Bytes
+        Set-Content -Path (Join-Path $subDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII -NoNewline # 10 Bytes
         Get-DirectorySize -Path $dir | Should -Be 15
     }
 
