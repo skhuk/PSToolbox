@@ -248,3 +248,29 @@ Describe 'Test-PathWritable' {
         @(Get-ChildItem -Path $dir -Filter '.pstoolbox_writetest_*.tmp').Count | Should -Be 0
     }
 }
+
+Describe 'Join-BasePath' {
+    It 'haengt einen relativen ChildPath an BasePath an' {
+        Join-BasePath -BasePath '\\server\share' -ChildPath 'Tools\x.exe' | Should -Be '\\server\share\Tools\x.exe'
+    }
+
+    It 'normalisiert Trennzeichen unabhaengig von trailing Backslash in BasePath' {
+        Join-BasePath -BasePath '\\server\share\' -ChildPath 'Tools\x.exe' | Should -Be '\\server\share\Tools\x.exe'
+    }
+
+    It 'behandelt einen ChildPath mit einzelnem fuehrenden Backslash weiterhin als relativ' {
+        Join-BasePath -BasePath '\\server\share' -ChildPath '\Tools\x.exe' | Should -Be '\\server\share\Tools\x.exe'
+    }
+
+    It 'gibt einen ChildPath mit Laufwerksbuchstabe unveraendert zurueck' {
+        Join-BasePath -BasePath '\\server\share' -ChildPath 'C:\Tools\x.exe' | Should -Be 'C:\Tools\x.exe'
+    }
+
+    It 'gibt einen ChildPath mit eigenem UNC-Pfad unveraendert zurueck' {
+        Join-BasePath -BasePath '\\server\share' -ChildPath '\\anderer-server\freigabe\x.exe' | Should -Be '\\anderer-server\freigabe\x.exe'
+    }
+
+    It 'funktioniert auch mit lokalem Windows-Pfad als BasePath' {
+        Join-BasePath -BasePath 'C:\Temp' -ChildPath 'Export\cron' | Should -Be 'C:\Temp\Export\cron'
+    }
+}

@@ -11,6 +11,20 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.3.0] - 2026-07-11
+
+### Neue Funktionen
+
+| Funktion | Modul | Beschreibung |
+|---|---|---|
+| `Join-BasePath` | PSToolbox.Common | Wie `Join-Path`, aber ein `ChildPath` mit Laufwerksbuchstabe (`C:\...`) oder eigenem UNC-Pfad (`\\server\...`) wird unveraendert zurueckgegeben statt an `BasePath` angehaengt -- fuer Config-Werte, die wahlweise relativ zu einem Basisverzeichnis oder als eigener vollstaendiger Pfad angegeben werden sollen. |
+
+Angefordert aus dem zenzy-Projekt: dort wurde dieselbe Logik lokal als
+`Join-ZenzyNetworkPath` gepflegt, um `ExportSubPath`/`CmdExePath`
+wahlweise relativ zu `NetworkPath` oder als eigenen Pfad zuzulassen.
+
+---
+
 ## [1.2.0] - 2026-07-11
 
 ### Neue Funktionen
