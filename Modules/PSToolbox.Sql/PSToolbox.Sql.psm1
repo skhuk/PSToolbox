@@ -387,6 +387,167 @@ function Convert-DelimitedFieldValue {
     }
 }
 
+function Initialize-PSToolboxDelimitedDataReaderType {
+    <#
+    .SYNOPSIS
+        Kompiliert (einmalig pro Session) eine IDataReader-Implementierung
+        fuer den -RawStrings-Bulk-Copy-Pfad von Import-DelimitedFileToSqlTable.
+    .DESCRIPTION
+        Fuer sehr grosse Dateien ist selbst eine schlanke PowerShell-
+        Schleife (ohne Convert-DelimitedFieldValue-Aufruf) messbar
+        langsam: PowerShell-Interpreter-Overhead pro Zeile/Zelle summiert
+        sich bei Millionen Zellen auf mehrere Sekunden. Diese Klasse
+        kapselt TextFieldParser als IDataReader, den SqlBulkCopy direkt
+        per WriteToServer(IDataReader) konsumieren kann -- die komplette
+        Zeilen-/Zellenverarbeitung laeuft dann in JIT-kompiliertem C#
+        statt im PowerShell-Interpreter.
+
+        MaxRowsPerCall/PrepareNextBatch/HasMoreData ermoeglichen
+        CommitEveryBatches weiterhin: WriteToServer(reader) verarbeitet
+        nur bis zu MaxRowsPerCall Zeilen, dann liefert Read() false und
+        die Bulk-Copy-Runde endet kontrolliert -- der Aufrufer kann
+        committen/neu beginnen und denselben Reader (der TextFieldParser
+        bleibt an seiner Position) fuer den naechsten Aufruf weiter
+        verwenden.
+    #>
+    if (-not ("PSToolboxDelimitedDataReader" -as [type])) {
+        Add-Type -ReferencedAssemblies @("System.Data", "Microsoft.VisualBasic") -TypeDefinition @"
+using System;
+using System.Data;
+using Microsoft.VisualBasic.FileIO;
+
+public sealed class PSToolboxDelimitedDataReader : IDataReader
+{
+    private readonly TextFieldParser _parser;
+    private readonly string[] _headers;
+    private readonly bool _emptyStringAsNull;
+    private string[] _current;
+    private int _rowsThisCall;
+    private int _maxRowsPerCall;
+    private long _totalRowsRead;
+
+    public PSToolboxDelimitedDataReader(TextFieldParser parser, string[] headers, bool emptyStringAsNull)
+    {
+        _parser = parser;
+        _headers = headers;
+        _emptyStringAsNull = emptyStringAsNull;
+    }
+
+    public int MaxRowsPerCall
+    {
+        get { return _maxRowsPerCall; }
+        set { _maxRowsPerCall = value; }
+    }
+
+    public long TotalRowsRead { get { return _totalRowsRead; } }
+
+    public bool HasMoreData { get { return !_parser.EndOfData; } }
+
+    public void PrepareNextBatch()
+    {
+        _rowsThisCall = 0;
+    }
+
+    public bool Read()
+    {
+        if (_maxRowsPerCall > 0 && _rowsThisCall >= _maxRowsPerCall)
+        {
+            return false;
+        }
+        if (_parser.EndOfData)
+        {
+            return false;
+        }
+        string[] fields = _parser.ReadFields();
+        if (fields.Length != _headers.Length)
+        {
+            throw new InvalidOperationException(
+                "Zeile " + _parser.LineNumber + ": " + fields.Length + " Felder, erwartet " + _headers.Length + ".");
+        }
+        _current = fields;
+        _rowsThisCall++;
+        _totalRowsRead++;
+        return true;
+    }
+
+    public object this[int i]
+    {
+        get
+        {
+            string v = _current[i];
+            if (_emptyStringAsNull && string.IsNullOrEmpty(v))
+            {
+                return DBNull.Value;
+            }
+            return v;
+        }
+    }
+
+    public object this[string name] { get { return this[GetOrdinal(name)]; } }
+
+    public int FieldCount { get { return _headers.Length; } }
+
+    public string GetName(int i) { return _headers[i]; }
+
+    public int GetOrdinal(string name)
+    {
+        for (int i = 0; i < _headers.Length; i++)
+        {
+            if (string.Equals(_headers[i], name, StringComparison.Ordinal)) { return i; }
+        }
+        throw new IndexOutOfRangeException(name);
+    }
+
+    public object GetValue(int i) { return this[i]; }
+
+    public int GetValues(object[] values)
+    {
+        int count = Math.Min(values.Length, _headers.Length);
+        for (int i = 0; i < count; i++) { values[i] = this[i]; }
+        return count;
+    }
+
+    public bool IsDBNull(int i) { return this[i] is DBNull; }
+
+    public string GetString(int i) { return (string)this[i]; }
+
+    public Type GetFieldType(int i) { return typeof(string); }
+
+    public string GetDataTypeName(int i) { return "NVARCHAR"; }
+
+    public bool NextResult() { return false; }
+
+    public void Close() { }
+
+    public DataTable GetSchemaTable() { return null; }
+
+    public int Depth { get { return 0; } }
+
+    public bool IsClosed { get { return false; } }
+
+    public int RecordsAffected { get { return -1; } }
+
+    public void Dispose() { }
+
+    public bool GetBoolean(int i) { throw new NotSupportedException(); }
+    public byte GetByte(int i) { throw new NotSupportedException(); }
+    public long GetBytes(int i, long fieldOffset, byte[] buffer, int bufferoffset, int length) { throw new NotSupportedException(); }
+    public char GetChar(int i) { throw new NotSupportedException(); }
+    public long GetChars(int i, long fieldoffset, char[] buffer, int bufferoffset, int length) { throw new NotSupportedException(); }
+    public IDataReader GetData(int i) { throw new NotSupportedException(); }
+    public DateTime GetDateTime(int i) { throw new NotSupportedException(); }
+    public decimal GetDecimal(int i) { throw new NotSupportedException(); }
+    public double GetDouble(int i) { throw new NotSupportedException(); }
+    public float GetFloat(int i) { throw new NotSupportedException(); }
+    public Guid GetGuid(int i) { throw new NotSupportedException(); }
+    public short GetInt16(int i) { throw new NotSupportedException(); }
+    public int GetInt32(int i) { throw new NotSupportedException(); }
+    public long GetInt64(int i) { throw new NotSupportedException(); }
+}
+"@
+    }
+}
+
 function Import-DelimitedFileToSqlTable {
     <#
     .SYNOPSIS
@@ -548,30 +709,48 @@ function Import-DelimitedFileToSqlTable {
 
         $bulk = & $newBulkCopy
 
-        $buffer = New-Object System.Data.DataTable
-        for ($i = 0; $i -lt $headers.Count; $i++) {
-            $column = New-Object System.Data.DataColumn($headers[$i], $columnTypes[$i])
-            $buffer.Columns.Add($column)
-        }
-
-        while (-not $parser.EndOfData) {
-            $fields = $parser.ReadFields()
-
-            if ($fields.Count -ne $headers.Count) {
-                throw "Zeile $($parser.LineNumber) in '$Path': $($fields.Count) Felder, erwartet $($headers.Count)."
+        if ($RawStrings) {
+            # IDataReader statt DataTable: der komplette Zeilen-/Zellen-
+            # Durchlauf laeuft in kompiliertem C# (PSToolboxDelimitedDataReader)
+            # statt in einer PowerShell-Schleife -- bei sehr grossen Dateien
+            # ist selbst eine einfache PowerShell-Zellschleife (ohne
+            # Convert-DelimitedFieldValue) durch Interpreter-Overhead pro
+            # Iteration spuerbar langsam (siehe .DESCRIPTION von
+            # Initialize-PSToolboxDelimitedDataReaderType).
+            Initialize-PSToolboxDelimitedDataReaderType
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $parser, $headers, $EmptyStringAsNull
+            if ($CommitEveryBatches -gt 0) {
+                $reader.MaxRowsPerCall = $BatchSize * $CommitEveryBatches
             }
 
-            $row = $buffer.NewRow()
-            if ($RawStrings) {
-                for ($i = 0; $i -lt $headers.Count; $i++) {
-                    $value = $fields[$i]
-                    if ($EmptyStringAsNull -and [string]::IsNullOrEmpty($value)) {
-                        $row[$i] = [System.DBNull]::Value
-                    } else {
-                        $row[$i] = $value
-                    }
+            do {
+                $reader.PrepareNextBatch()
+                $bulk.WriteToServer($reader)
+
+                if (($CommitEveryBatches -gt 0) -and $reader.HasMoreData) {
+                    $bulk.Close()
+                    $Transaction.Value.Commit()
+                    $Transaction.Value = $Connection.BeginTransaction()
+                    $bulk = & $newBulkCopy
                 }
-            } else {
+            } while ($reader.HasMoreData)
+
+            $rowCount = $reader.TotalRowsRead
+        } else {
+            $buffer = New-Object System.Data.DataTable
+            for ($i = 0; $i -lt $headers.Count; $i++) {
+                $column = New-Object System.Data.DataColumn($headers[$i], $columnTypes[$i])
+                $buffer.Columns.Add($column)
+            }
+
+            while (-not $parser.EndOfData) {
+                $fields = $parser.ReadFields()
+
+                if ($fields.Count -ne $headers.Count) {
+                    throw "Zeile $($parser.LineNumber) in '$Path': $($fields.Count) Felder, erwartet $($headers.Count)."
+                }
+
+                $row = $buffer.NewRow()
                 for ($i = 0; $i -lt $headers.Count; $i++) {
                     try {
                         $row[$i] = Convert-DelimitedFieldValue -Value $fields[$i] -TargetType $columnTypes[$i] -EmptyStringAsNull $EmptyStringAsNull -NumberCulture $NumberCulture -DateCulture $DateCulture -TrueValues $TrueValues -FalseValues $FalseValues
@@ -579,28 +758,28 @@ function Import-DelimitedFileToSqlTable {
                         throw "Zeile $($parser.LineNumber), Spalte '$($headers[$i])' in '$Path': $($_.Exception.Message)"
                     }
                 }
-            }
-            $buffer.Rows.Add($row)
-            $rowCount++
+                $buffer.Rows.Add($row)
+                $rowCount++
 
-            if ($buffer.Rows.Count -ge $BatchSize) {
-                $bulk.WriteToServer($buffer)
-                $buffer.Clear()
-                $batchesSinceCommit++
+                if ($buffer.Rows.Count -ge $BatchSize) {
+                    $bulk.WriteToServer($buffer)
+                    $buffer.Clear()
+                    $batchesSinceCommit++
 
-                if (($CommitEveryBatches -gt 0) -and ($batchesSinceCommit -ge $CommitEveryBatches)) {
-                    $bulk.Close()
-                    $Transaction.Value.Commit()
-                    $Transaction.Value = $Connection.BeginTransaction()
-                    $bulk = & $newBulkCopy
-                    $batchesSinceCommit = 0
+                    if (($CommitEveryBatches -gt 0) -and ($batchesSinceCommit -ge $CommitEveryBatches)) {
+                        $bulk.Close()
+                        $Transaction.Value.Commit()
+                        $Transaction.Value = $Connection.BeginTransaction()
+                        $bulk = & $newBulkCopy
+                        $batchesSinceCommit = 0
+                    }
                 }
             }
-        }
 
-        if ($buffer.Rows.Count -gt 0) {
-            $bulk.WriteToServer($buffer)
-            $buffer.Clear()
+            if ($buffer.Rows.Count -gt 0) {
+                $bulk.WriteToServer($buffer)
+                $buffer.Clear()
+            }
         }
     } finally {
         if ($null -ne $bulk) { $bulk.Close() }
