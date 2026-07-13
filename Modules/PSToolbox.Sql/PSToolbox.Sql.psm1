@@ -1,6 +1,17 @@
 #Requires -Version 5.1
 Set-StrictMode -Version Latest
 
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    # #Requires -Version 5.1 prueft nur eine Mindestversion und laesst
+    # PowerShell 7 (Version 7.x >= 5.1) durch -- die kompilierte
+    # IDataReader-Implementierung (Initialize-PSToolboxDelimitedDataReaderType)
+    # und System.Data.SqlClient sind aber nur unter Windows PowerShell 5.1
+    # (Desktop-CLR) getestet/unterstuetzt. Ohne diese Pruefung schlaegt der
+    # Import erst tief in einem Add-Type-Aufruf mit einem kryptischen
+    # C#-Compilerfehler fehl statt mit einer klaren Meldung hier.
+    throw "PSToolbox.Sql erfordert Windows PowerShell 5.1 (Desktop-Edition) -- System.Data.SqlClient und der kompilierte CSV-Reader (Add-Type) sind unter PowerShell 7/Core nicht kompatibel. Bitte ueber powershell.exe ausfuehren (siehe README.md, Abschnitt 'Hinweis PowerShell 7')."
+}
+
 <#
     PSToolbox.Sql
     =============
