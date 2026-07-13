@@ -137,6 +137,28 @@ Describe 'Convert-DelimitedFieldValue' {
     }
 }
 
+Describe 'Resolve-PSToolboxSqlClientType' {
+    It 'liefert unter Desktop-Edition System.Data.SqlClient.SqlConnection' {
+        InModuleScope 'PSToolbox.Sql' {
+            if ($PSVersionTable.PSEdition -eq 'Core') {
+                Set-ItResult -Skipped -Because 'Desktop-Zweig, laeuft nur unter Windows PowerShell 5.1'
+                return
+            }
+            Resolve-PSToolboxSqlClientType | Should -Be ([System.Data.SqlClient.SqlConnection])
+        }
+    }
+}
+
+Describe 'Test-SqlTableExists' {
+    It 'wirft bei ungueltigem Schema/Tabellenname (Identifier-Validierung), bevor die Connection genutzt wird' {
+        # Ungeoeffnete Connection reicht: Test-SqlIdentifier wirft, bevor
+        # $Connection ueberhaupt angefasst wird -- kein SQL Server noetig.
+        $dummyConnection = New-Object System.Data.SqlClient.SqlConnection
+        { Test-SqlTableExists -Connection $dummyConnection -Schema 'bad;schema' -TableName 'x' } | Should -Throw '*enthaelt unzulaessige Zeichen*'
+        { Test-SqlTableExists -Connection $dummyConnection -Schema 'zenzy' -TableName 'bad;table' } | Should -Throw '*enthaelt unzulaessige Zeichen*'
+    }
+}
+
 Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
     It 'Initialize-PSToolboxDelimitedDataReaderType kompiliert ohne Fehler (auch mehrfach aufgerufen)' {
         InModuleScope 'PSToolbox.Sql' {

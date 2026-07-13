@@ -59,11 +59,21 @@ immer vorher mit `Test-SqlIdentifier` pruefen.
 
 ## Hinweis PowerShell 7
 
-Dieses Modul nutzt `System.Data.SqlClient`, das in PowerShell 7 nicht mehr
-enthalten ist - die Funktionen mit SqlConnection-Bezug laufen daher nur
-unter Windows PowerShell 5.1 zuverlaessig. Die Migration auf
-`Microsoft.Data.SqlClient` ist als Aufgabe in der `TODO.md` (Repo-Root)
-vermerkt.
+Dieses Modul unterstuetzt sowohl Windows PowerShell 5.1 (Desktop) als auch
+PowerShell 7 (Core). Unter Desktop wird `System.Data.SqlClient` genutzt
+(unveraendert, keine zusaetzliche Installation). Unter Core wird
+`Microsoft.Data.SqlClient` benoetigt -- kein Bestandteil dieses Moduls,
+muss von der einbindenden Umgebung bereitgestellt werden (z.B.
+`Install-Module SqlServer`, alternativ `PSTOOLBOX_SQLCLIENT_PATH` auf die
+DLL setzen; siehe README.md im Repo-Root fuer Details). Die
+Connection/Transaction-Parameter der SqlConnection-gebundenen Funktionen
+(`Invoke-SqlBatchScript`, `Get-SqlEmptySchemaTable`,
+`Import-DelimitedFileToSqlTable`, `Write-SqlTableLogEntry`,
+`Invoke-SqlScalarOnConnection`) sind auf
+`System.Data.IDbConnection`/`System.Data.IDbTransaction` typisiert und
+akzeptieren daher Objekte aus beiden Providern. `Invoke-SqlScalar` (eigene
+Connection aus einem Connection-String) waehlt den passenden Provider
+automatisch je Edition (`Resolve-PSToolboxSqlClientType`).
 
 ## Konventionen
 

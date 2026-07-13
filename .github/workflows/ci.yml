@@ -37,3 +37,27 @@ jobs:
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+  test-pwsh:
+    name: Pester (PowerShell 7 / Core)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deckt die Core-Edition-Pfade ab (u.a. den Add-Type-Zweig in
+      # Initialize-PSToolboxDelimitedDataReaderType sowie die auf
+      # IDbConnection/IDbTransaction umgestellten Parametertypen), OHNE
+      # Microsoft.Data.SqlClient zu installieren -- die Tests decken bewusst
+      # nur SqlConnection-unabhaengige Logik ab (siehe tests/*.Tests.ps1),
+      # Resolve-PSToolboxSqlClientTypes Core-Aufloesung bleibt hier
+      # ungetestet (siehe TODO.md, Integrationstests-Punkt).
+      - name: Pester-Tests (pwsh)
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -SkipPublisherCheck -MinimumVersion 5.5.0
+          Import-Module Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = '.\tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config

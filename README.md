@@ -118,11 +118,29 @@ und CI-Beispielen steht in [`docs/EINBINDUNG.md`](docs/EINBINDUNG.md).
 
 ## Hinweis PowerShell 7
 
-Zielplattform ist **Windows PowerShell 5.1**. Die SQL-gebundenen Funktionen
-(PSToolbox.Sql sowie das SQL-Logging in PSToolbox.Logging) nutzen
-`System.Data.SqlClient`, das in PowerShell 7 (.NET Core/.NET) nicht mehr
-enthalten ist. Sicherer Weg unter PS 7: die Skripte, die SQL-Funktionen
-nutzen, weiterhin ueber `powershell.exe` (5.1) ausfuehren. Eine Migration
-auf `Microsoft.Data.SqlClient` (funktioniert unter 5.1 und 7) ist als
-Aufgabe in [`TODO.md`](TODO.md) vermerkt. Die uebrigen Funktionen
-(Hashtables, Config, Datei-Logging, Exit-Codes) laufen auch unter PS 7.
+Die SQL-gebundenen Funktionen (PSToolbox.Sql sowie das SQL-Logging in
+PSToolbox.Logging) unterstuetzen sowohl Windows PowerShell 5.1
+(Desktop-Edition) als auch PowerShell 7 (Core-Edition). Unter Desktop wird
+weiterhin `System.Data.SqlClient` genutzt (Teil des .NET Framework, keine
+zusaetzliche Installation noetig). Unter Core wird stattdessen
+`Microsoft.Data.SqlClient` verwendet -- dieses Paket ist **kein Bestandteil
+von PSToolbox** (bewusst keine committeten Binaries) und muss von der
+einbindenden Umgebung einmalig bereitgestellt werden, z.B. per
+`Install-Module SqlServer -Scope CurrentUser` (buendelt
+Microsoft.Data.SqlClient) oder direktem NuGet-Download. Ist die Assembly
+nicht ueber den Standard-Suchpfad auffindbar, kann ihr Pfad ueber die
+Umgebungsvariable `PSTOOLBOX_SQLCLIENT_PATH` (voller Pfad zur
+Microsoft.Data.SqlClient.dll) angegeben werden. Fehlt die Abhaengigkeit
+unter Core komplett, werfen die betroffenen Funktionen eine klare
+Fehlermeldung mit diesen Hinweisen (siehe `Resolve-PSToolboxSqlClientType`
+in PSToolbox.Sql.psm1 bzw. PSToolbox.Logging.psm1); `Write-SqlLogEntry`
+degradiert stattdessen (wie bei jedem anderen SQL-Fehler) fail-soft auf den
+Datei-Log-Fallback. Alle uebrigen Funktionen (Hashtables, Config,
+Datei-Logging, Exit-Codes) liefen schon zuvor unter beiden Editionen.
+
+Projekte, die PSToolbox einbinden, muessen sich um diese Unterscheidung
+selbst nicht mehr kuemmern: Funktionen, die eine bereits offene
+Connection/Transaction entgegennehmen (z.B. `Invoke-SqlBatchScript`,
+`Get-SqlEmptySchemaTable`, `Import-DelimitedFileToSqlTable`), akzeptieren
+ueber `System.Data.IDbConnection`/`IDbTransaction` Objekte aus beiden
+Providern gleichermassen.
