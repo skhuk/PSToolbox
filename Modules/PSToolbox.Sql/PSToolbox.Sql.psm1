@@ -90,6 +90,81 @@ function Resolve-PSToolboxSqlClientType {
     throw "PSToolbox.Sql: Microsoft.Data.SqlClient konnte unter PowerShell 7/Core nicht geladen werden. Bitte das Paket verfuegbar machen, z.B. per 'Install-Module SqlServer -Scope CurrentUser' (buendelt Microsoft.Data.SqlClient) oder direktem NuGet-Download, und sicherstellen, dass die Assembly im Suchpfad liegt -- alternativ die Umgebungsvariable PSTOOLBOX_SQLCLIENT_PATH auf den vollen Pfad zu Microsoft.Data.SqlClient.dll setzen. Siehe README.md, Abschnitt 'Hinweis PowerShell 7'."
 }
 
+function Write-PSToolboxSqlTrace {
+    <#
+    .SYNOPSIS
+        Schreibt eine Trace-Zeile (SQL-Statement/Ergebnis/Aufrufer) fuer
+        den optionalen -Trace-Modus der SQL-Ausfuehrungsfunktionen.
+    .DESCRIPTION
+        Bewusst OHNE Abhaengigkeit zu PSToolbox.Logging (siehe README.md,
+        "Keine Abhaengigkeit zu anderen PSToolbox-Modulen"): schreibt eine
+        eigene, minimale Zeitstempel-Zeile direkt per Add-Content, statt
+        Write-LogEntry zu nutzen. Gibt die Zeile zusaetzlich immer per
+        Write-Verbose aus -- Trace beinhaltet damit automatisch Verbose,
+        auch ohne LogFilePath.
+
+        Der Aufrufer-Kontext (CallerChain) wird vom Aufrufer per
+        Get-PSToolboxSqlCallerChain ermittelt und hier nur noch
+        eingebettet -- so bleibt diese Funktion einfach testbar.
+    .PARAMETER Message
+        Der Trace-Text (z.B. das gesendete SQL-Statement oder dessen
+        Ergebnis).
+    .PARAMETER LogFilePath
+        Optionaler Pfad zu einer Logdatei. Ohne Angabe landet die Zeile
+        nur im Verbose-Stream.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+
+        [string]$LogFilePath
+    )
+
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [Trace] $Message"
+    Write-Verbose $line
+
+    if (-not [string]::IsNullOrEmpty($LogFilePath)) {
+        Add-Content -Path $LogFilePath -Value $line -Encoding UTF8
+    }
+}
+
+function Get-PSToolboxSqlCallerChain {
+    <#
+    .SYNOPSIS
+        Liefert eine kurze Aufrufer-Kette fuer Trace-Meldungen.
+    .DESCRIPTION
+        Viele SQL-Aufrufe laufen ueber eine zentrale Huelle (z.B. ein
+        projekteigenes Invoke-XyzSqlStep) -- der reine unmittelbare
+        Aufrufer waere in einer Trace-Ausgabe dann immer nur diese eine
+        Huellenfunktion, was wenig Informationswert hat. Diese Funktion
+        liefert deshalb die obersten Frames des Callstacks (Default 3,
+        oberhalb der aktuell ausfuehrenden PSToolbox-Funktion) als
+        " <- "-verkettete Liste, z.B. "Invoke-SqlBatchScript <-
+        Invoke-ZenzySqlStep <- Invoke-ZenzyImport".
+    .PARAMETER Depth
+        Anzahl Callstack-Frames (Default 3).
+    .OUTPUTS
+        [string]
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [int]$Depth = 3
+    )
+
+    $frames = Get-PSCallStack | Select-Object -Skip 1 -First $Depth
+    $names = @()
+    foreach ($frame in $frames) {
+        if ([string]::IsNullOrEmpty($frame.FunctionName)) { continue }
+        $names += $frame.FunctionName
+    }
+
+    if ($names.Count -eq 0) { return "<unbekannt>" }
+
+    return ($names -join " <- ")
+}
+
 function Test-SqlIdentifier {
     <#
     .SYNOPSIS
@@ -292,6 +367,14 @@ function Invoke-SqlBatchScript {
         Die SqlTransaction, in der die Batches ausgefuehrt werden sollen.
     .PARAMETER CommandTimeoutSec
         Timeout je Batch in Sekunden (Default 300).
+    .PARAMETER Trace
+        Schreibt jedes gesendete Statement sowie die Anzahl betroffener
+        Zeilen (plus Aufrufer-Kette, siehe Get-PSToolboxSqlCallerChain)
+        als Trace-Zeile (siehe Write-PSToolboxSqlTrace). Beinhaltet
+        automatisch Verbose-Ausgabe, auch ohne -LogFilePath.
+    .PARAMETER LogFilePath
+        Optionaler Pfad zu einer Logdatei fuer die Trace-Ausgabe (nur
+        wirksam mit -Trace).
     .EXAMPLE
         Invoke-SqlBatchScript -Sql $ddl -Connection $conn -Transaction $tx
     #>
@@ -306,13 +389,26 @@ function Invoke-SqlBatchScript {
         [Parameter(Mandatory = $true)]
         [System.Data.IDbTransaction]$Transaction,
 
-        [int]$CommandTimeoutSec = 300
+        [int]$CommandTimeoutSec = 300,
+
+        [switch]$Trace,
+
+        [string]$LogFilePath
     )
+
+    $callerChain = $null
+    if ($Trace) {
+        $callerChain = Get-PSToolboxSqlCallerChain
+    }
 
     $batches = $Sql -split "(?im)^\s*GO\s*$"
 
     foreach ($batch in $batches) {
         if ([string]::IsNullOrWhiteSpace($batch)) { continue }
+
+        if ($Trace) {
+            Write-PSToolboxSqlTrace -Message "SQL gesendet von [$callerChain]: $batch" -LogFilePath $LogFilePath
+        }
 
         $command = $null
         try {
@@ -320,7 +416,11 @@ function Invoke-SqlBatchScript {
             $command.Transaction = $Transaction
             $command.CommandTimeout = $CommandTimeoutSec
             $command.CommandText = $batch
-            [void]$command.ExecuteNonQuery()
+            $rowsAffected = $command.ExecuteNonQuery()
+
+            if ($Trace) {
+                Write-PSToolboxSqlTrace -Message "Ergebnis von [$callerChain]: $rowsAffected Zeile(n) betroffen." -LogFilePath $LogFilePath
+            }
         } finally {
             if ($null -ne $command) { $command.Dispose() }
         }
@@ -346,6 +446,14 @@ function Get-SqlEmptySchemaTable {
         Resolve-PSToolboxSqlClientType).
     .PARAMETER Transaction
         Die SqlTransaction, in der die Abfrage laufen soll.
+    .PARAMETER Trace
+        Schreibt die gesendete Abfrage sowie die Anzahl ermittelter
+        Spalten (plus Aufrufer-Kette, siehe Get-PSToolboxSqlCallerChain)
+        als Trace-Zeile (siehe Write-PSToolboxSqlTrace). Beinhaltet
+        automatisch Verbose-Ausgabe, auch ohne -LogFilePath.
+    .PARAMETER LogFilePath
+        Optionaler Pfad zu einer Logdatei fuer die Trace-Ausgabe (nur
+        wirksam mit -Trace).
     .EXAMPLE
         $schema = Get-SqlEmptySchemaTable -QualifiedTable "[dbo].[Kunden]" -Connection $conn -Transaction $tx
         $schema.Columns | ForEach-Object { $_.ColumnName }
@@ -359,19 +467,34 @@ function Get-SqlEmptySchemaTable {
         [System.Data.IDbConnection]$Connection,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.IDbTransaction]$Transaction
+        [System.Data.IDbTransaction]$Transaction,
+
+        [switch]$Trace,
+
+        [string]$LogFilePath
     )
 
     $command = $null
     $reader = $null
     $schemaTable = New-Object System.Data.DataTable
+    $callerChain = $null
+    $sqlText = "SELECT TOP 0 * FROM $QualifiedTable"
+
+    if ($Trace) {
+        $callerChain = Get-PSToolboxSqlCallerChain
+        Write-PSToolboxSqlTrace -Message "SQL gesendet von [$callerChain]: $sqlText" -LogFilePath $LogFilePath
+    }
 
     try {
         $command = $Connection.CreateCommand()
         $command.Transaction = $Transaction
-        $command.CommandText = "SELECT TOP 0 * FROM $QualifiedTable"
+        $command.CommandText = $sqlText
         $reader = $command.ExecuteReader()
         $schemaTable.Load($reader)
+
+        if ($Trace) {
+            Write-PSToolboxSqlTrace -Message "Ergebnis von [$callerChain]: $($schemaTable.Columns.Count) Spalte(n) ermittelt." -LogFilePath $LogFilePath
+        }
     } finally {
         if ($null -ne $reader) { $reader.Dispose() }
         if ($null -ne $command) { $command.Dispose() }
@@ -963,7 +1086,12 @@ function Import-DelimitedFileToSqlTable {
 
         [switch]$RawStrings,
 
-        [string]$LogFilePath
+        [string]$LogFilePath,
+
+        # Erzwingt dieselbe Batch-Zwischenzeiten-Ausgabe wie -Verbose
+        # (siehe $isVerbose unten), unabhaengig vom $VerbosePreference des
+        # Aufrufers -- fuer den projektweiten -Trace-Diagnosemodus.
+        [switch]$Trace
     )
 
     Add-Type -AssemblyName "Microsoft.VisualBasic"
@@ -971,7 +1099,7 @@ function Import-DelimitedFileToSqlTable {
     # -Verbose ist ueber [CmdletBinding()] als gemeinsamer Parameter
     # verfuegbar -- $VerbosePreference ist in diesem Funktions-Scope
     # 'Continue', wenn der Aufrufer -Verbose:$true uebergeben hat.
-    $isVerbose = ($VerbosePreference -eq 'Continue')
+    $isVerbose = ($VerbosePreference -eq 'Continue') -or $Trace
     $batchStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $overallStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -1275,6 +1403,14 @@ function Invoke-SqlScalarOnConnection {
     .PARAMETER AllowNull
         Wenn gesetzt, wird bei NULL/keinem Ergebnis $null zurueckgegeben
         statt eines Fehlers.
+    .PARAMETER Trace
+        Schreibt die gesendete Abfrage sowie den Rueckgabewert (plus
+        Aufrufer-Kette, siehe Get-PSToolboxSqlCallerChain) als Trace-Zeile
+        (siehe Write-PSToolboxSqlTrace). Beinhaltet automatisch
+        Verbose-Ausgabe, auch ohne -LogFilePath.
+    .PARAMETER LogFilePath
+        Optionaler Pfad zu einer Logdatei fuer die Trace-Ausgabe (nur
+        wirksam mit -Trace).
     .EXAMPLE
         Invoke-SqlScalarOnConnection -Connection $conn -Transaction $tx -Query "SELECT MAX(Nr) FROM zenzy.Abrechnungen"
     #>
@@ -1290,8 +1426,18 @@ function Invoke-SqlScalarOnConnection {
 
         [int]$CommandTimeoutSec = 300,
 
-        [switch]$AllowNull
+        [switch]$AllowNull,
+
+        [switch]$Trace,
+
+        [string]$LogFilePath
     )
+
+    $callerChain = $null
+    if ($Trace) {
+        $callerChain = Get-PSToolboxSqlCallerChain
+        Write-PSToolboxSqlTrace -Message "SQL gesendet von [$callerChain]: $Query" -LogFilePath $LogFilePath
+    }
 
     $command = $null
     try {
@@ -1302,6 +1448,10 @@ function Invoke-SqlScalarOnConnection {
         $command.CommandText = $Query
         $command.CommandTimeout = $CommandTimeoutSec
         $value = $command.ExecuteScalar()
+
+        if ($Trace) {
+            Write-PSToolboxSqlTrace -Message "Ergebnis von [$callerChain]: $value" -LogFilePath $LogFilePath
+        }
 
         if (($null -eq $value) -or ($value -is [System.DBNull])) {
             if ($AllowNull) {
@@ -1368,4 +1518,4 @@ function Invoke-SqlScalar {
     }
 }
 
-Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Test-SqlTableExists, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar
+Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Test-SqlTableExists, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar, Write-PSToolboxSqlTrace, Get-PSToolboxSqlCallerChain
