@@ -137,6 +137,18 @@ Describe 'Convert-DelimitedFieldValue' {
     }
 }
 
+Describe 'Resolve-PSToolboxSqlClientType' {
+    It 'liefert unter Desktop-Edition System.Data.SqlClient.SqlConnection' {
+        InModuleScope 'PSToolbox.Sql' {
+            if ($PSVersionTable.PSEdition -eq 'Core') {
+                Set-ItResult -Skipped -Because 'Desktop-Zweig, laeuft nur unter Windows PowerShell 5.1'
+                return
+            }
+            Resolve-PSToolboxSqlClientType | Should -Be ([System.Data.SqlClient.SqlConnection])
+        }
+    }
+}
+
 Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
     It 'Initialize-PSToolboxDelimitedDataReaderType kompiliert ohne Fehler (auch mehrfach aufgerufen)' {
         InModuleScope 'PSToolbox.Sql' {

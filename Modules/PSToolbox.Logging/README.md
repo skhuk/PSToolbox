@@ -120,6 +120,19 @@ Korrelation: zusammengehoerige Eintraege eines Laufs finden sich ueber
 `hostname` + `processid` - dieselben Werte stehen in der Session-Startzeile
 der Datei-Logdatei.
 
+## Hinweis PowerShell 7
+
+`Write-SqlLogEntry` unterstuetzt sowohl Windows PowerShell 5.1 (Desktop,
+`System.Data.SqlClient`) als auch PowerShell 7 (Core,
+`Microsoft.Data.SqlClient`). Unter Core muss Microsoft.Data.SqlClient von
+der einbindenden Umgebung bereitgestellt werden (z.B.
+`Install-Module SqlServer`, alternativ Umgebungsvariable
+`PSTOOLBOX_SQLCLIENT_PATH`; siehe README.md im Repo-Root fuer Details).
+Fehlt die Abhaengigkeit, degradiert `Write-SqlLogEntry` fail-soft auf den
+Datei-Log-Fallback (`-LogFilePath`) statt den Aufrufer abzubrechen - wie
+bei jedem anderen SQL-Fehler dieser Funktion. Alle anderen Funktionen
+dieses Moduls sind bereits editionsunabhaengig.
+
 ## Logrotation
 
 Zwei unabhaengige Strategien:

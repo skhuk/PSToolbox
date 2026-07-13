@@ -448,6 +448,73 @@ function Invoke-LogRotation {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+function Resolve-PSToolboxSqlClientType {
+    <#
+    .SYNOPSIS
+        Ermittelt den zu verwendenden SqlConnection-Typ (System.Data.SqlClient
+        unter Desktop-Edition, Microsoft.Data.SqlClient unter Core-Edition)
+        und stellt sicher, dass die passende Assembly geladen ist.
+    .DESCRIPTION
+        Write-SqlLogEntry oeffnet selbst eine SqlConnection aus einem
+        Connection-String -- hier muss PSToolbox.Logging selbst entscheiden,
+        welcher ADO.NET-SqlClient-Provider verwendet wird. Identische Kopie
+        von Resolve-PSToolboxSqlClientType in PSToolbox.Sql (die Module
+        bleiben bewusst unabhaengig voneinander, siehe README.md).
+
+        Unter Windows PowerShell 5.1 (Desktop-Edition) ist
+        System.Data.SqlClient Teil der .NET-Framework-GAC-Assemblies und
+        immer verfuegbar -- unveraendertes Verhalten, keine neue
+        Abhaengigkeit.
+
+        Unter PowerShell 7 (Core-Edition) ist System.Data.SqlClient nicht
+        mehr Teil der Runtime; PSToolbox nutzt stattdessen
+        Microsoft.Data.SqlClient (NuGet-Paket), das PSToolbox bewusst NICHT
+        selbst mitliefert (keine committeten Binaries) -- das Projekt/die
+        Umgebung muss es einmalig verfuegbar machen, z.B. per
+        "Install-Module SqlServer". Aufloesung in dieser Reihenfolge:
+          1. Typ bereits geladen
+          2. Add-Type -AssemblyName Microsoft.Data.SqlClient
+          3. Umgebungsvariable PSTOOLBOX_SQLCLIENT_PATH -- Add-Type -Path
+          4. throw mit klarer, umsetzbarer Fehlermeldung (siehe README.md,
+             Abschnitt "Hinweis PowerShell 7")
+    .OUTPUTS
+        [type] -- entweder [System.Data.SqlClient.SqlConnection] (Desktop)
+        oder [Microsoft.Data.SqlClient.SqlConnection] (Core, nach
+        erfolgreicher Aufloesung).
+    #>
+    [CmdletBinding()]
+    [OutputType([type])]
+    param()
+
+    if ($PSVersionTable.PSEdition -ne 'Core') {
+        return [System.Data.SqlClient.SqlConnection]
+    }
+
+    $typeName = 'Microsoft.Data.SqlClient.SqlConnection'
+
+    $resolved = $typeName -as [type]
+    if ($resolved) { return $resolved }
+
+    try {
+        Add-Type -AssemblyName 'Microsoft.Data.SqlClient' -ErrorAction Stop
+    } catch {
+        # Ignorieren -- naechster Aufloesungsversuch (Umgebungsvariable) folgt.
+    }
+    $resolved = $typeName -as [type]
+    if ($resolved) { return $resolved }
+
+    if (-not [string]::IsNullOrEmpty($env:PSTOOLBOX_SQLCLIENT_PATH)) {
+        if (-not (Test-Path -LiteralPath $env:PSTOOLBOX_SQLCLIENT_PATH)) {
+            throw "PSTOOLBOX_SQLCLIENT_PATH zeigt auf '$env:PSTOOLBOX_SQLCLIENT_PATH', diese Datei existiert nicht."
+        }
+        Add-Type -Path $env:PSTOOLBOX_SQLCLIENT_PATH -ErrorAction Stop
+        $resolved = $typeName -as [type]
+        if ($resolved) { return $resolved }
+    }
+
+    throw "PSToolbox.Logging: Microsoft.Data.SqlClient konnte unter PowerShell 7/Core nicht geladen werden. Bitte das Paket verfuegbar machen, z.B. per 'Install-Module SqlServer -Scope CurrentUser' (buendelt Microsoft.Data.SqlClient) oder direktem NuGet-Download, und sicherstellen, dass die Assembly im Suchpfad liegt -- alternativ die Umgebungsvariable PSTOOLBOX_SQLCLIENT_PATH auf den vollen Pfad zu Microsoft.Data.SqlClient.dll setzen. Siehe README.md, Abschnitt 'Hinweis PowerShell 7'."
+}
+
 function Write-SqlLogEntry {
     <#
     .SYNOPSIS
@@ -547,7 +614,8 @@ function Write-SqlLogEntry {
     $Description = & $truncate $Description 4000
 
     try {
-        $conn = New-Object System.Data.SqlClient.SqlConnection($ConnectionString)
+        $connectionType = Resolve-PSToolboxSqlClientType
+        $conn = [Activator]::CreateInstance($connectionType, @($ConnectionString))
         $conn.Open()
         try {
             $cmd = $conn.CreateCommand()

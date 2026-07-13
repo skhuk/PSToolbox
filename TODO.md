@@ -20,18 +20,29 @@ Funktionen).
 
 ## PSToolbox.Sql
 
-- [ ] **PowerShell-7-Unterstuetzung**: `System.Data.SqlClient` ist in PS 7
-  nicht mehr enthalten. Migrationspfad: auf `Microsoft.Data.SqlClient`
-  umstellen (NuGet-Paket, muss ausgeliefert/geladen werden) und die
-  Typreferenzen in PSToolbox.Sql + PSToolbox.Logging abstrahieren.
-  Bis dahin gilt: SQL-Funktionen nur unter Windows PowerShell 5.1 nutzen
-  (siehe Hinweis in den READMEs).
+- [x] **PowerShell-7-Unterstuetzung**: umgesetzt -- PSToolbox.Sql und
+  PSToolbox.Logging nutzen unter Core `Microsoft.Data.SqlClient` statt
+  `System.Data.SqlClient` (externe Abhaengigkeit, keine committeten
+  Binaries; siehe `Resolve-PSToolboxSqlClientType` in beiden Modulen sowie
+  die READMEs, Abschnitt "Hinweis PowerShell 7"). Connection/Transaction-
+  Parameter sind auf `System.Data.IDbConnection`/`IDbTransaction`
+  umgestellt, `CompatiblePSEditions` beider Module ist jetzt
+  `@('Desktop', 'Core')`.
 - [ ] **Integrationstests** fuer die SqlConnection-gebundenen Funktionen
   (`Invoke-SqlBatchScript`, `Get-SqlEmptySchemaTable`,
   `Import-DelimitedFileToSqlTable`, `Write-SqlTableLogEntry`,
   `Write-SqlLogEntry`, `Invoke-SqlScalarOnConnection`, `Invoke-SqlScalar`)
   - z. B. gegen ein SQL-Server-Container-Image in der CI. Die reinen
-  Logik-Funktionen sind bereits per Pester abgedeckt.
+  Logik-Funktionen sind bereits per Pester abgedeckt. Der neue
+  `test-pwsh`-CI-Job deckt nur die editionsunabhaengige Logik unter Core
+  ab -- `Resolve-PSToolboxSqlClientType`s Core-Aufloesung/Fehlerpfad und
+  echte Microsoft.Data.SqlClient-Konnektivitaet bleiben ungetestet.
+- [x] **`Add-Type -ReferencedAssemblies` unter Core verifiziert**: gegen
+  echtes PowerShell 7 (Linux, `pwsh`) getestet -- `netstandard` allein
+  reichte nicht (List<> wird an `System.Collections` weitergeleitet, nicht
+  an netstandard); Referenzliste um `System.Collections`/`System.Runtime`
+  ergaenzt, kompiliert und der Reader liest Header/Zeilen/DBNull/
+  Feldanzahl-Fehler korrekt.
 
 ## Prozess
 

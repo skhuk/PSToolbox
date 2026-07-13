@@ -1,21 +1,10 @@
 #Requires -Version 5.1
 Set-StrictMode -Version Latest
 
-if ($PSVersionTable.PSEdition -eq 'Core') {
-    # #Requires -Version 5.1 prueft nur eine Mindestversion und laesst
-    # PowerShell 7 (Version 7.x >= 5.1) durch -- die kompilierte
-    # IDataReader-Implementierung (Initialize-PSToolboxDelimitedDataReaderType)
-    # und System.Data.SqlClient sind aber nur unter Windows PowerShell 5.1
-    # (Desktop-CLR) getestet/unterstuetzt. Ohne diese Pruefung schlaegt der
-    # Import erst tief in einem Add-Type-Aufruf mit einem kryptischen
-    # C#-Compilerfehler fehl statt mit einer klaren Meldung hier.
-    throw "PSToolbox.Sql erfordert Windows PowerShell 5.1 (Desktop-Edition) -- System.Data.SqlClient und der kompilierte CSV-Reader (Add-Type) sind unter PowerShell 7/Core nicht kompatibel. Bitte ueber powershell.exe ausfuehren (siehe README.md, Abschnitt 'Hinweis PowerShell 7')."
-}
-
 <#
     PSToolbox.Sql
     =============
-    Projektneutrale Helferfunktionen fuer PowerShell-5.1-Skripte, die mit
+    Projektneutrale Helferfunktionen fuer PowerShell-Skripte, die mit
     SQL Server und CSV-aehnlichen Dateien arbeiten (dynamisches SQL,
     Connection-Strings, Batch-Ausfuehrung, Bulk-Import, generisches
     Tabellen-Logging).
@@ -23,8 +12,83 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
     Jede Funktion hat Comment-Based-Help (Get-Help <Funktion> -Full zeigt
     Beschreibung, Parameter und Beispiel).
 
-    PowerShell 5.1 kompatibel.
+    Unterstuetzt sowohl Windows PowerShell 5.1 (Desktop-Edition,
+    System.Data.SqlClient) als auch PowerShell 7 (Core-Edition,
+    Microsoft.Data.SqlClient) -- siehe Resolve-PSToolboxSqlClientType
+    und README.md, Abschnitt "Hinweis PowerShell 7".
 #>
+
+function Resolve-PSToolboxSqlClientType {
+    <#
+    .SYNOPSIS
+        Ermittelt den zu verwendenden SqlConnection-Typ (System.Data.SqlClient
+        unter Desktop-Edition, Microsoft.Data.SqlClient unter Core-Edition)
+        und stellt sicher, dass die passende Assembly geladen ist.
+    .DESCRIPTION
+        PSToolbox.Sql oeffnet an genau einer Stelle selbst eine SqlConnection
+        aus einem Connection-String (Invoke-SqlScalar) -- nur hier muss
+        PSToolbox selbst entscheiden, welcher ADO.NET-SqlClient-Provider
+        verwendet wird (Funktionen, die eine bereits offene Connection vom
+        Aufrufer entgegennehmen, sind ueber System.Data.IDbConnection/
+        IDbTransaction providerunabhaengig, siehe z.B. Invoke-SqlBatchScript).
+
+        Unter Windows PowerShell 5.1 (Desktop-Edition) ist
+        System.Data.SqlClient Teil der .NET-Framework-GAC-Assemblies und
+        immer verfuegbar -- unveraendertes Verhalten, keine neue
+        Abhaengigkeit.
+
+        Unter PowerShell 7 (Core-Edition) ist System.Data.SqlClient nicht
+        mehr Teil der Runtime; PSToolbox nutzt stattdessen
+        Microsoft.Data.SqlClient (NuGet-Paket). PSToolbox liefert diese
+        Assembly bewusst NICHT selbst mit (keine committeten Binaries) --
+        das Projekt/die Umgebung, die PSToolbox einbindet, muss sie einmalig
+        verfuegbar machen, z.B. per "Install-Module SqlServer" (buendelt
+        Microsoft.Data.SqlClient) oder direktem NuGet-Download. Aufloesung
+        in dieser Reihenfolge:
+          1. Typ bereits geladen (z.B. durch Host/Profil/vorherigen Import)
+          2. Add-Type -AssemblyName Microsoft.Data.SqlClient (klappt, wenn
+             das Paket im Assembly-Suchpfad der Runtime auffindbar ist)
+          3. Umgebungsvariable PSTOOLBOX_SQLCLIENT_PATH zeigt auf die DLL
+             (Microsoft.Data.SqlClient.dll) -- Add-Type -Path
+          4. throw mit klarer, umsetzbarer Fehlermeldung (siehe README.md,
+             Abschnitt "Hinweis PowerShell 7")
+    .OUTPUTS
+        [type] -- entweder [System.Data.SqlClient.SqlConnection] (Desktop)
+        oder [Microsoft.Data.SqlClient.SqlConnection] (Core, nach
+        erfolgreicher Aufloesung).
+    #>
+    [CmdletBinding()]
+    [OutputType([type])]
+    param()
+
+    if ($PSVersionTable.PSEdition -ne 'Core') {
+        return [System.Data.SqlClient.SqlConnection]
+    }
+
+    $typeName = 'Microsoft.Data.SqlClient.SqlConnection'
+
+    $resolved = $typeName -as [type]
+    if ($resolved) { return $resolved }
+
+    try {
+        Add-Type -AssemblyName 'Microsoft.Data.SqlClient' -ErrorAction Stop
+    } catch {
+        # Ignorieren -- naechster Aufloesungsversuch (Umgebungsvariable) folgt.
+    }
+    $resolved = $typeName -as [type]
+    if ($resolved) { return $resolved }
+
+    if (-not [string]::IsNullOrEmpty($env:PSTOOLBOX_SQLCLIENT_PATH)) {
+        if (-not (Test-Path -LiteralPath $env:PSTOOLBOX_SQLCLIENT_PATH)) {
+            throw "PSTOOLBOX_SQLCLIENT_PATH zeigt auf '$env:PSTOOLBOX_SQLCLIENT_PATH', diese Datei existiert nicht."
+        }
+        Add-Type -Path $env:PSTOOLBOX_SQLCLIENT_PATH -ErrorAction Stop
+        $resolved = $typeName -as [type]
+        if ($resolved) { return $resolved }
+    }
+
+    throw "PSToolbox.Sql: Microsoft.Data.SqlClient konnte unter PowerShell 7/Core nicht geladen werden. Bitte das Paket verfuegbar machen, z.B. per 'Install-Module SqlServer -Scope CurrentUser' (buendelt Microsoft.Data.SqlClient) oder direktem NuGet-Download, und sicherstellen, dass die Assembly im Suchpfad liegt -- alternativ die Umgebungsvariable PSTOOLBOX_SQLCLIENT_PATH auf den vollen Pfad zu Microsoft.Data.SqlClient.dll setzen. Siehe README.md, Abschnitt 'Hinweis PowerShell 7'."
+}
 
 function Test-SqlIdentifier {
     <#
@@ -221,7 +285,9 @@ function Invoke-SqlBatchScript {
         Das komplette SQL-Skript (kann mehrere `GO`-getrennte Batches
         enthalten).
     .PARAMETER Connection
-        Eine offene SqlConnection.
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType).
     .PARAMETER Transaction
         Die SqlTransaction, in der die Batches ausgefuehrt werden sollen.
     .PARAMETER CommandTimeoutSec
@@ -235,10 +301,10 @@ function Invoke-SqlBatchScript {
         [string]$Sql,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlConnection]$Connection,
+        [System.Data.IDbConnection]$Connection,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlTransaction]$Transaction,
+        [System.Data.IDbTransaction]$Transaction,
 
         [int]$CommandTimeoutSec = 300
     )
@@ -275,7 +341,9 @@ function Get-SqlEmptySchemaTable {
     .PARAMETER QualifiedTable
         Vollqualifizierter Tabellenname, z.B. "[schema].[Tabelle]".
     .PARAMETER Connection
-        Eine offene SqlConnection.
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType).
     .PARAMETER Transaction
         Die SqlTransaction, in der die Abfrage laufen soll.
     .EXAMPLE
@@ -288,10 +356,10 @@ function Get-SqlEmptySchemaTable {
         [string]$QualifiedTable,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlConnection]$Connection,
+        [System.Data.IDbConnection]$Connection,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlTransaction]$Transaction
+        [System.Data.IDbTransaction]$Transaction
     )
 
     $command = $null
@@ -433,14 +501,25 @@ function Initialize-PSToolboxDelimitedDataReaderType {
         seiner Position) fuer den naechsten Aufruf weiter verwenden.
     #>
     if (-not ("PSToolboxDelimitedDataReader" -as [type])) {
-        # System.Xml wird gebraucht, obwohl im Code nicht direkt genutzt:
-        # IDataReader.GetSchemaTable() gibt DataTable zurueck, und
-        # DataTable implementiert IXmlSerializable (System.Xml) -- unter
-        # Windows PowerShell 5.1 (Desktop-CLR) muss der Compiler dieses
-        # Interface beim Implementieren von IDataReader mitaufloesen
-        # koennen, sonst schlaegt die Kompilierung fehl ("Typ ... ist in
-        # einer nicht referenzierten Assembly definiert").
-        Add-Type -ReferencedAssemblies @("System.Data", "System.Xml") -TypeDefinition @"
+        # -ReferencedAssemblies ersetzt die Standardreferenzliste des
+        # Compilers komplett -- unter Desktop-CLR (Windows PowerShell 5.1)
+        # reichen die kurzen GAC-Namen "System.Data"/"System.Xml" (System.Xml
+        # wird gebraucht, obwohl im Code nicht direkt genutzt:
+        # IDataReader.GetSchemaTable() gibt DataTable zurueck, und DataTable
+        # implementiert IXmlSerializable, das der Compiler beim Implementieren
+        # von IDataReader mitaufloesen muss, sonst "Typ ... ist in einer nicht
+        # referenzierten Assembly definiert"). Unter Core-CLR (PowerShell 7)
+        # ist "System.Data" nur eine Weiterleitungs-Assembly (IDataReader/
+        # DataTable liegen tatsaechlich in System.Data.Common); "netstandard"
+        # deckt dort zusaetzlich die restlichen BCL-Typen ab (List<>,
+        # StreamReader, StringBuilder), die sonst durch das Ersetzen der
+        # Standardreferenzen ebenfalls nicht mehr aufloesbar waeren.
+        $referencedAssemblies = @("System.Data", "System.Xml")
+        if ($PSVersionTable.PSEdition -eq 'Core') {
+            $referencedAssemblies = @('System.Data.Common', 'netstandard', 'System.Collections', 'System.Runtime')
+        }
+
+        Add-Type -ReferencedAssemblies $referencedAssemblies -TypeDefinition @"
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -718,7 +797,10 @@ function Import-DelimitedFileToSqlTable {
     .PARAMETER QualifiedTable
         Vollqualifizierter Zieltabellenname, z.B. "[schema].[Tabelle]".
     .PARAMETER Connection
-        Eine offene SqlConnection.
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType). Die SqlBulkCopy-Instanz wird
+        passend zum tatsaechlichen Connection-Typ aufgeloest.
     .PARAMETER Transaction
         [ref] auf die SqlTransaction, in der der Import laufen soll. Als
         [ref] uebergeben, weil die Funktion bei gesetztem CommitEveryBatches
@@ -797,7 +879,7 @@ function Import-DelimitedFileToSqlTable {
         [string]$QualifiedTable,
 
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlConnection]$Connection,
+        [System.Data.IDbConnection]$Connection,
 
         [Parameter(Mandatory = $true)]
         [ref]$Transaction,
@@ -864,8 +946,22 @@ function Import-DelimitedFileToSqlTable {
     $rowCount = 0
     $batchesSinceCommit = 0
 
+    # SqlBulkCopy muss zum tatsaechlichen Provider von $Connection passen
+    # (System.Data.SqlClient unter Desktop, Microsoft.Data.SqlClient unter
+    # Core) -- einmalig per Reflection aufgeloest, nicht pro Batch.
+    $sqlClientNamespace = $Connection.GetType().Namespace
+    $bulkCopyType = "$sqlClientNamespace.SqlBulkCopy" -as [type]
+    $bulkCopyOptionsType = "$sqlClientNamespace.SqlBulkCopyOptions" -as [type]
+    if ((-not $bulkCopyType) -or (-not $bulkCopyOptionsType)) {
+        throw "Import-DelimitedFileToSqlTable: Konnte SqlBulkCopy-Typen fuer Namespace '$sqlClientNamespace' nicht aufloesen (Connection-Typ: $($Connection.GetType().FullName))."
+    }
+    # Nach Enum-Namen statt Zahlenwert aufloesen, falls die Enum-Werte
+    # zwischen System.Data.SqlClient und Microsoft.Data.SqlClient jemals
+    # abweichen sollten.
+    $tableLockOption = [System.Enum]::Parse($bulkCopyOptionsType, 'TableLock')
+
     $newBulkCopy = {
-        $b = New-Object System.Data.SqlClient.SqlBulkCopy($Connection, [System.Data.SqlClient.SqlBulkCopyOptions]::TableLock, $Transaction.Value)
+        $b = [Activator]::CreateInstance($bulkCopyType, @($Connection, $tableLockOption, $Transaction.Value))
         $b.DestinationTableName = $QualifiedTable
         $b.BulkCopyTimeout = $CommandTimeoutSec
         $b.BatchSize = $BatchSize
@@ -1026,7 +1122,9 @@ function Write-SqlTableLogEntry {
         von Message in den SQL-Text) -- SQL-Injection-sicher auch bei
         beliebigem Message-Inhalt.
     .PARAMETER Connection
-        Eine offene SqlConnection.
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType).
     .PARAMETER Transaction
         Optionale SqlTransaction (kann $null sein fuer Auto-Commit).
     .PARAMETER QualifiedLogTable
@@ -1054,9 +1152,9 @@ function Write-SqlTableLogEntry {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlConnection]$Connection,
+        [System.Data.IDbConnection]$Connection,
 
-        [System.Data.SqlClient.SqlTransaction]$Transaction,
+        [System.Data.IDbTransaction]$Transaction,
 
         [Parameter(Mandatory = $true)]
         [string]$QualifiedLogTable,
@@ -1108,7 +1206,9 @@ function Invoke-SqlScalarOnConnection {
         Datensatz ist - mit -AllowNull wird stattdessen $null
         zurueckgegeben.
     .PARAMETER Connection
-        Eine offene SqlConnection.
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType).
     .PARAMETER Transaction
         Optionale SqlTransaction.
     .PARAMETER Query
@@ -1124,9 +1224,9 @@ function Invoke-SqlScalarOnConnection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [System.Data.SqlClient.SqlConnection]$Connection,
+        [System.Data.IDbConnection]$Connection,
 
-        [System.Data.SqlClient.SqlTransaction]$Transaction,
+        [System.Data.IDbTransaction]$Transaction,
 
         [Parameter(Mandatory = $true)]
         [string]$Query,
@@ -1202,7 +1302,8 @@ function Invoke-SqlScalar {
 
     $connection = $null
     try {
-        $connection = New-Object System.Data.SqlClient.SqlConnection($ConnectionString)
+        $connectionType = Resolve-PSToolboxSqlClientType
+        $connection = [Activator]::CreateInstance($connectionType, @($ConnectionString))
         $connection.Open()
         return Invoke-SqlScalarOnConnection -Connection $connection -Query $Query -CommandTimeoutSec $CommandTimeoutSec -AllowNull:$AllowNull
     } finally {

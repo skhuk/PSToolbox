@@ -5,10 +5,11 @@
     #
     # Wer nur einzelne Bereiche braucht, importiert stattdessen gezielt das
     # jeweilige Modul-Manifest unter Modules/ (siehe README.md).
-    ModuleVersion     = '1.3.1'
-    GUID              = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
-    PowerShellVersion = '5.1'
-    Description       = 'PSToolbox: Sammel-Manifest, das alle projektneutralen PSToolbox-Module (Common, Logging, Sql) gemeinsam laedt.'
+    ModuleVersion        = '1.4.0'
+    GUID                 = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
+    PowerShellVersion    = '5.1'
+    CompatiblePSEditions = @('Desktop', 'Core')
+    Description          = 'PSToolbox: Sammel-Manifest, das alle projektneutralen PSToolbox-Module (Common, Logging, Sql) gemeinsam laedt.'
 
     NestedModules     = @(
         'Modules/PSToolbox.Common/PSToolbox.Common.psm1',
@@ -68,7 +69,7 @@
 
     PrivateData       = @{
         PSData = @{
-            Tags       = @('PSToolbox', 'Logging', 'SqlServer', 'Utilities', 'PowerShell51')
+            Tags       = @('PSToolbox', 'Logging', 'SqlServer', 'Utilities', 'PowerShell51', 'PowerShell7')
             ProjectUri = 'https://github.com/skhuk/PSToolbox'
         }
     }
