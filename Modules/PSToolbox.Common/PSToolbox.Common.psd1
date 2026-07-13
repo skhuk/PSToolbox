@@ -1,5 +1,5 @@
 @{
-    ModuleVersion     = '1.2.1'
+    ModuleVersion     = '1.3.0'
     GUID              = '8a282d78-f41f-4c78-b865-09ea998c699a'
     RootModule        = 'PSToolbox.Common.psm1'
     PowerShellVersion = '5.1'
@@ -10,6 +10,7 @@
         'Copy-HashtableDeep',
         'ConvertTo-HashtableFromPSCustomObject',
         'Get-PSToolboxConfig',
+        'Test-PSToolboxFileSigned',
         'Resolve-ValueOrDefault',
         'Get-DirectorySize',
         'Get-DiskFreeSpaceInfo',

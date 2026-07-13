@@ -270,6 +270,43 @@ function Get-PSToolboxConfig {
     return $config
 }
 
+function Test-PSToolboxFileSigned {
+    <#
+    .SYNOPSIS
+        Prueft rein textuell, ob eine Datei einen Authenticode-
+        Signaturblock enthaelt.
+
+    .DESCRIPTION
+        Bewusst KEINE kryptografische Gueltigkeits-/Vertrauenspruefung
+        (kein Get-AuthenticodeSignature/Zertifikatskette) -- es wird nur
+        auf das Vorhandensein der von Set-AuthenticodeSignature
+        angehaengten Markerzeile "# SIG # Begin signature block" geprueft.
+        Gedacht fuer Faelle, in denen Dateien manuell signiert werden, um
+        nachtraegliche Veraenderung erkennbar zu machen (nicht um die
+        Signatur selbst zu verifizieren).
+
+        Eine nicht existierende Datei gilt als nicht signiert (kein
+        Fehler).
+
+    .PARAMETER Path
+        Pfad zur zu pruefenden Datei (z.B. eine .psd1- oder .ps1-Datei).
+
+    .OUTPUTS
+        [bool]
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -Path $Path)) { return $false }
+
+    $content = Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrEmpty($content)) { return $false }
+
+    return $content.Contains("# SIG # Begin signature block")
+}
+
 function Resolve-ValueOrDefault {
     <#
     .SYNOPSIS
@@ -618,6 +655,7 @@ Export-ModuleMember -Function `
     Copy-HashtableDeep, `
     ConvertTo-HashtableFromPSCustomObject, `
     Get-PSToolboxConfig, `
+    Test-PSToolboxFileSigned, `
     Resolve-ValueOrDefault, `
     Get-DirectorySize, `
     Get-DiskFreeSpaceInfo, `
