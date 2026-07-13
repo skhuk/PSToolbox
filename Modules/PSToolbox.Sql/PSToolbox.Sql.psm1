@@ -73,7 +73,7 @@ function Resolve-PSToolboxSqlClientType {
     try {
         Add-Type -AssemblyName 'Microsoft.Data.SqlClient' -ErrorAction Stop
     } catch {
-        # Ignorieren -- naechster Aufloesungsversuch (Umgebungsvariable) folgt.
+        Write-Verbose "Add-Type -AssemblyName Microsoft.Data.SqlClient fehlgeschlagen, naechster Aufloesungsversuch (Umgebungsvariable) folgt: $($_.Exception.Message)"
     }
     $resolved = $typeName -as [type]
     if ($resolved) { return $resolved }
