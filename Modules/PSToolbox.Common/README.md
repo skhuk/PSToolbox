@@ -20,6 +20,7 @@ Get-Help Merge-Hashtable -Full
 | `Copy-HashtableDeep` | Rekursive (tiefe) Kopie einer Hashtable |
 | `ConvertTo-HashtableFromPSCustomObject` | Rekursive PSCustomObject -> Hashtable Konvertierung (fuer PS 5.1 ohne `-AsHashtable`) |
 | `Get-PSToolboxConfig` | Laedt eine `.psd1`-Config und ueberschreibt sie optional per JSON-Secrets-Datei (rekursiver Merge) |
+| `Test-PSToolboxFileSigned` | Prueft rein textuell (kein Gueltigkeits-Check), ob eine Datei einen Authenticode-Signaturblock enthaelt |
 | `Resolve-ValueOrDefault` | Generisches Coalesce-Pattern: Wert oder Fallback (auch als ScriptBlock) |
 | `Get-DirectorySize` | Rekursive Gesamtgroesse eines Verzeichnisses in Bytes |
 | `Get-DiskFreeSpaceInfo` | Freier/gesamter Speicherplatz eines Pfads, UNC-faehig (P/Invoke) |
