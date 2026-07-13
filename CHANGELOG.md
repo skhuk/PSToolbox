@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.5.0] - 2026-07-13
+
+### Neue Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Test-SqlTableExists` | PSToolbox.Sql | Prueft per `OBJECT_ID` (Schema/Tabellenname vorher via `Test-SqlIdentifier` validiert), ob eine Tabelle existiert -- liefert `$true`/`$false` statt einer kryptischen ADO.NET-Exception ("Ungueltiger Objektname ..."), wenn eine nachfolgende Abfrage/ein Bulk-Import gegen eine noch nicht angelegte Tabelle laeuft. Gedacht z.B. fuer differentielle Exporte/Importe, die vor dem ersten Full-Lauf auf eine noch nicht existierende Zieltabelle treffen koennen. |
+
+---
+
 ## [1.4.0] - 2026-07-13
 
 ### Neue Funktionen

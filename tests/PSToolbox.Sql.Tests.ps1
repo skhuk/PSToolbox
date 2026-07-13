@@ -149,6 +149,16 @@ Describe 'Resolve-PSToolboxSqlClientType' {
     }
 }
 
+Describe 'Test-SqlTableExists' {
+    It 'wirft bei ungueltigem Schema/Tabellenname (Identifier-Validierung), bevor die Connection genutzt wird' {
+        # Ungeoeffnete Connection reicht: Test-SqlIdentifier wirft, bevor
+        # $Connection ueberhaupt angefasst wird -- kein SQL Server noetig.
+        $dummyConnection = New-Object System.Data.SqlClient.SqlConnection
+        { Test-SqlTableExists -Connection $dummyConnection -Schema 'bad;schema' -TableName 'x' } | Should -Throw '*enthaelt unzulaessige Zeichen*'
+        { Test-SqlTableExists -Connection $dummyConnection -Schema 'zenzy' -TableName 'bad;table' } | Should -Throw '*enthaelt unzulaessige Zeichen*'
+    }
+}
+
 Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
     It 'Initialize-PSToolboxDelimitedDataReaderType kompiliert ohne Fehler (auch mehrfach aufgerufen)' {
         InModuleScope 'PSToolbox.Sql' {

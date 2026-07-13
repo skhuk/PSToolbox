@@ -383,6 +383,63 @@ function Get-SqlEmptySchemaTable {
     return ,$schemaTable
 }
 
+function Test-SqlTableExists {
+    <#
+    .SYNOPSIS
+        Prueft, ob eine Tabelle in der Zieldatenbank existiert.
+    .DESCRIPTION
+        Nutzt OBJECT_ID(N'[Schema].[Tabelle]', N'U'), damit Aufrufer VOR
+        einer Abfrage/einem Bulk-Import gegen eine moeglicherweise noch
+        nicht angelegte Tabelle pruefen koennen, statt eine kryptische
+        ADO.NET-Exception ("Ungueltiger Objektname ...") abzufangen bzw.
+        aufzuloesen. Schema/Tabellenname werden vor dem Zusammenbauen der
+        Abfrage per Test-SqlIdentifier validiert (kein Freitext-SQL aus
+        Konfigurationswerten).
+    .PARAMETER Connection
+        Eine offene SqlConnection (System.Data.SqlClient unter Desktop-
+        Edition oder Microsoft.Data.SqlClient unter Core-Edition -- siehe
+        Resolve-PSToolboxSqlClientType).
+    .PARAMETER Transaction
+        Optionale SqlTransaction, in der die Pruefung laufen soll.
+    .PARAMETER Schema
+        Schema der zu pruefenden Tabelle, z.B. "dbo".
+    .PARAMETER TableName
+        Name der zu pruefenden Tabelle (ohne Schema-Praefix).
+    .PARAMETER CommandTimeoutSec
+        Timeout in Sekunden (Default 300).
+    .OUTPUTS
+        [bool] -- $true, wenn die Tabelle existiert, sonst $false.
+    .EXAMPLE
+        if (-not (Test-SqlTableExists -Connection $conn -Schema 'zenzy' -TableName 'Abrechnungen')) {
+            # z.B. auf Full-Import/-Export zurueckfallen statt differentiell abzufragen
+        }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Data.IDbConnection]$Connection,
+
+        [System.Data.IDbTransaction]$Transaction,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Schema,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TableName,
+
+        [int]$CommandTimeoutSec = 300
+    )
+
+    Test-SqlIdentifier -Identifier $Schema -Description "Schema"
+    Test-SqlIdentifier -Identifier $TableName -Description "Tabellenname"
+
+    $query = "SELECT CASE WHEN OBJECT_ID(N'[$Schema].[$TableName]', N'U') IS NOT NULL THEN 1 ELSE 0 END"
+    $result = Invoke-SqlScalarOnConnection -Connection $Connection -Transaction $Transaction -Query $query -CommandTimeoutSec $CommandTimeoutSec
+
+    return [bool]$result
+}
+
 function Convert-DelimitedFieldValue {
     <#
     .SYNOPSIS
@@ -1311,4 +1368,4 @@ function Invoke-SqlScalar {
     }
 }
 
-Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar
+Export-ModuleMember -Function Test-SqlIdentifier, Format-SqlLiteral, Expand-SqlPlaceholders, New-SqlServerConnectionString, Invoke-SqlBatchScript, Get-SqlEmptySchemaTable, Test-SqlTableExists, Convert-DelimitedFieldValue, Import-DelimitedFileToSqlTable, Write-SqlTableLogEntry, Invoke-SqlScalarOnConnection, Invoke-SqlScalar

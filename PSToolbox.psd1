@@ -5,7 +5,7 @@
     #
     # Wer nur einzelne Bereiche braucht, importiert stattdessen gezielt das
     # jeweilige Modul-Manifest unter Modules/ (siehe README.md).
-    ModuleVersion        = '1.4.0'
+    ModuleVersion        = '1.5.0'
     GUID                 = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
     PowerShellVersion    = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -56,6 +56,7 @@
         'New-SqlServerConnectionString',
         'Invoke-SqlBatchScript',
         'Get-SqlEmptySchemaTable',
+        'Test-SqlTableExists',
         'Convert-DelimitedFieldValue',
         'Import-DelimitedFileToSqlTable',
         'Write-SqlTableLogEntry',
