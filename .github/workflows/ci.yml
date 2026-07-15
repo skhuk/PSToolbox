@@ -61,3 +61,33 @@ jobs:
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+  notify-zenzy:
+    name: Notify zenzy submodule update
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch repository_dispatch to zenzy
+        shell: bash
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/skhuk/zenzy/dispatches \
+            -d '{"event_type":"pstoolbox-updated"}'
+
+  notify-gfpc:
+    name: Notify GFPC submodule update
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch repository_dispatch to GFPC
+        shell: bash
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/skhuk/gfpc/dispatches \
+            -d '{"event_type":"pstoolbox-updated"}'
