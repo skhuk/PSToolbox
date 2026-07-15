@@ -64,7 +64,7 @@ jobs:
 
   notify-zenzy:
     name: Notify zenzy submodule update
-    needs: test
+    needs: [test, test-pwsh]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -79,7 +79,7 @@ jobs:
 
   notify-gfpc:
     name: Notify GFPC submodule update
-    needs: test
+    needs: [test, test-pwsh]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
