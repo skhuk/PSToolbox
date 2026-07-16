@@ -7,6 +7,8 @@ dass mehrere Projekte (aktuell `gfpc` und `zenzy`, perspektivisch weitere)
 dieselben, an einer Stelle gepflegten Module nutzen koennen, statt Kopien
 der Funktionen unabhaengig voneinander weiterzuentwickeln.
 
+Wichtig: Änderungen an Funktionen/Modulen sollen möglichst rückwärtskompatibel sein. Inkompatible Änderungen sollten vermieden werden und müssen durch einen Major-Releasesprung kenntlich gemacht werden!
+
 ## Struktur
 
 ```
