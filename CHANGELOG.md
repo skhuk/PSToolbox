@@ -11,6 +11,20 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.5.1] - 2026-07-16
+
+### Sonstiges
+
+- **Neuer Ordner `Tools/`** fuer eigenstaendige, direkt ausfuehrbare Skripte
+  (kein `Import-Module`) im Unterschied zu `Modules/`. Erstes Tool:
+  [`Tools/Sign-Project.ps1`](Tools/Sign-Project.ps1) - signiert
+  PowerShell-Dateien eines Verzeichnisses rekursiv per Authenticode
+  (`signtool.exe`, RFC-3161-Zeitstempel) oder prueft mit `-VerifyFile` die
+  Signatur einer einzelnen Datei; Zertifikat wird per `-Thumbprint`
+  angegeben oder automatisch aus `Cert:\CurrentUser\My` /
+  `Cert:\LocalMachine\My` ermittelt. Keine `ModuleVersion` betroffen, da
+  kein Modul unter `Modules/` geaendert wurde.
+
 ## [1.5.0] - 2026-07-13
 
 ### Neue Funktionen

@@ -21,6 +21,9 @@ Modules/
   PSToolbox.Logging/   <- CLI-/Datei-/SQL-Logging, Rotation, Exit-Codes
   PSToolbox.Sql/       <- SQL Server: dynamisches SQL, Bulk-Import, Connection-Strings
 
+Tools/                 <- Eigenstaendige Skripte (direkt ausgefuehrt, kein Import)
+  Sign-Project.ps1      <- Signiert PowerShell-Dateien per Authenticode / prueft eine Signatur
+
 docs/
   EINBINDUNG.md        <- Anleitung: PSToolbox in andere Projekte einbinden
   MIGRATION.md         <- Zuordnung ZENZY-/GFPC-Funktionen -> PSToolbox (fuer die Umstellung)
@@ -70,6 +73,19 @@ Fuer die Umstellung bestehender Projekte (zenzy, gfpc) auf PSToolbox siehe
 [`docs/MIGRATION.md`](docs/MIGRATION.md) - dort ist jede alte Funktion der
 neuen zugeordnet, inkl. der Breaking Changes. Aenderungen je Version sind im
 [`CHANGELOG.md`](CHANGELOG.md) dokumentiert.
+
+## Tools
+
+`Tools/` enthaelt eigenstaendige Skripte, die direkt ausgefuehrt werden
+(kein `Import-Module`) - im Unterschied zu `Modules/`, das ausschliesslich
+importierbare Module ohne CLI-Charakter enthaelt.
+
+- [`Tools/Sign-Project.ps1`](Tools/Sign-Project.ps1) - durchsucht ein
+  Verzeichnis rekursiv nach PowerShell-Dateien und signiert diese per
+  Authenticode (`signtool.exe`) inkl. RFC-3161-Zeitstempel, oder prueft mit
+  `-VerifyFile` die Signatur einer einzelnen Datei. Zertifikat wird per
+  `-Thumbprint` angegeben oder automatisch aus `Cert:\CurrentUser\My` /
+  `Cert:\LocalMachine\My` ermittelt. Siehe `Get-Help .\Tools\Sign-Project.ps1 -Detailed`.
 
 ## Projektbezogene Konfiguration
 
