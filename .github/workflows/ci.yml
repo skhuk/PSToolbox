@@ -16,7 +16,9 @@ jobs:
         shell: powershell
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          $results = Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
+          $results = @()
+          $results += Invoke-ScriptAnalyzer -Path .\Modules -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
+          $results += Invoke-ScriptAnalyzer -Path .\Tools -Recurse -Settings .\PSScriptAnalyzerSettings.psd1
           if ($results) {
             $results | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize | Out-String -Width 200 | Write-Host
           }
