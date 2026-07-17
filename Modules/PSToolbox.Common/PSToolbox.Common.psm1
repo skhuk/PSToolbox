@@ -649,21 +649,28 @@ function Join-BasePath {
     return Join-Path $BasePath $ChildPath
 }
 
-function Get-FileLineCount {
+function Test-FileMinLineCount {
     <#
     .SYNOPSIS
-        Zaehlt die Zeilen einer Textdatei.
+        Prueft, ob eine Textdatei mindestens eine bestimmte Anzahl Zeilen hat.
 
     .DESCRIPTION
-        Liest die Datei zeilenweise per StreamReader statt sie komplett
-        (Get-Content) in den Speicher zu laden -- relevant bei sehr grossen
-        Dateien (z.B. Export-CSVs mit Millionen Zeilen). Zaehlt jede von
-        ReadLine() gelieferte Zeile, unabhaengig davon, ob die letzte Zeile
-        mit einem Zeilenumbruch abschliesst. Eine komplett leere Datei
-        liefert 0.
+        Liest per StreamReader hoechstens MinLines Zeilen und bricht dann
+        sofort ab -- bewusst KEIN vollstaendiger Zeilenzaehler. Eine echte
+        Gesamtzaehlung (Get-Content, oder ein StreamReader, der bis EOF
+        liest) skaliert mit der Dateigroesse; fuer eine reine
+        Schwellwertpruefung ("hat die Datei ueberhaupt mehr als die
+        Kopfzeile?") ist das unnoetig -- bei einer Mehr-Gigabyte-CSV mit
+        Millionen Zeilen wuerde eine volle Zaehlung die komplette Datei
+        einlesen, nur um am Ende "ja, mehr als 1 Zeile" zu beantworten.
+        Diese Funktion liest im Erfolgsfall nur die ersten MinLines Zeilen,
+        unabhaengig von der Gesamtgroesse der Datei.
 
     .PARAMETER Path
         Pfad zur Datei. Muss existieren.
+
+    .PARAMETER MinLines
+        Geforderte Mindestanzahl Zeilen (positive Ganzzahl).
 
     .PARAMETER Encoding
         Encoding zum Lesen (Default: UTF8). Bei Dateien mit abweichender
@@ -671,35 +678,45 @@ function Get-FileLineCount {
         drohen bei Mehrbyte-/Sonderzeichen falsch erkannte Zeilenumbrueche.
 
     .EXAMPLE
-        Get-FileLineCount -Path 'C:\export\Tabelle.csv' -Encoding ([System.Text.Encoding]::GetEncoding(1252))
+        Test-FileMinLineCount -Path 'C:\export\Tabelle.csv' -MinLines 2 -Encoding ([System.Text.Encoding]::GetEncoding(1252))
+        # $true, sobald die Datei (z.B. Kopfzeile + mind. 1 Datenzeile) eine
+        # zweite Zeile hat -- liest dafuer nie mehr als 2 Zeilen ein, auch
+        # wenn die Datei Millionen Zeilen umfasst.
 
     .OUTPUTS
-        System.Int64
+        System.Boolean
     #>
     [CmdletBinding()]
-    [OutputType([long])]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
 
+        [Parameter(Mandatory = $true)]
+        [int]$MinLines,
+
         [System.Text.Encoding]$Encoding = [System.Text.Encoding]::UTF8
     )
+
+    if ($MinLines -le 0) {
+        throw "MinLines muss positiv sein."
+    }
 
     if (-not (Test-Path -Path $Path -PathType Leaf)) {
         throw "Datei nicht gefunden: $Path"
     }
 
-    $count = [long]0
+    $count = 0
     $reader = New-Object System.IO.StreamReader($Path, $Encoding)
     try {
-        while ($null -ne $reader.ReadLine()) {
+        while (($count -lt $MinLines) -and ($null -ne $reader.ReadLine())) {
             $count++
         }
     } finally {
         $reader.Dispose()
     }
 
-    return $count
+    return $count -ge $MinLines
 }
 
 Export-ModuleMember -Function `
@@ -717,4 +734,4 @@ Export-ModuleMember -Function `
     ConvertTo-SafeFileName, `
     Test-PathWritable, `
     Join-BasePath, `
-    Get-FileLineCount
+    Test-FileMinLineCount

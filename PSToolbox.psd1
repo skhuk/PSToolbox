@@ -33,7 +33,7 @@
         'ConvertTo-SafeFileName',
         'Test-PathWritable',
         'Join-BasePath',
-        'Get-FileLineCount',
+        'Test-FileMinLineCount',
 
         # PSToolbox.Logging
         'Initialize-Logging',

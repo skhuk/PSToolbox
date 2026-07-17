@@ -17,7 +17,7 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 | Funktion | Modul | Aenderung |
 |---|---|---|
-| `Get-FileLineCount` | PSToolbox.Common | Zaehlt die Zeilen einer Textdatei zeilenweise per `StreamReader` statt sie komplett (`Get-Content`) in den Speicher zu laden -- relevant bei sehr grossen Dateien. Optionales `-Encoding` (Default UTF8). Gedacht u.a. fuer schnelle Vorab-Pruefungen wie "enthaelt diese CSV ueberhaupt Datenzeilen ausser der Kopfzeile". |
+| `Test-FileMinLineCount` | PSToolbox.Common | Prueft per `StreamReader` mit Fruehausstieg, ob eine Textdatei mindestens `-MinLines` Zeilen hat -- liest dafuer nie mehr als `MinLines` Zeilen ein, unabhaengig von der Gesamtgroesse der Datei. Gedacht fuer schnelle Schwellwert-Pruefungen wie "enthaelt diese CSV ueberhaupt Datenzeilen ausser der Kopfzeile", ohne bei sehr grossen Dateien die komplette Datei einlesen zu muessen. |
 
 ---
 

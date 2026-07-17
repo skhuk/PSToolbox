@@ -275,39 +275,73 @@ Describe 'Join-BasePath' {
     }
 }
 
-Describe 'Get-FileLineCount' {
-    It 'zaehlt mehrere Zeilen korrekt' {
+Describe 'Test-FileMinLineCount' {
+    It 'gibt $true zurueck, wenn die Datei mehr Zeilen als MinLines hat' {
         $file = Join-Path $TestDrive 'drei-zeilen.csv'
         [System.IO.File]::WriteAllText($file, "Kopf`r`nZeile1`r`nZeile2`r`n")
-        Get-FileLineCount -Path $file | Should -Be 3
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue
     }
 
-    It 'zaehlt eine Datei ohne abschliessenden Zeilenumbruch korrekt' {
+    It 'gibt $true zurueck, wenn die Datei genau MinLines Zeilen hat' {
+        $file = Join-Path $TestDrive 'zwei-zeilen.csv'
+        [System.IO.File]::WriteAllText($file, "Kopf`r`nZeile1`r`n")
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue
+    }
+
+    It 'gibt $true zurueck, wenn die letzte Zeile ohne abschliessenden Zeilenumbruch endet' {
         $file = Join-Path $TestDrive 'ohne-abschluss.csv'
         [System.IO.File]::WriteAllText($file, "Kopf`r`nZeile1")
-        Get-FileLineCount -Path $file | Should -Be 2
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue
     }
 
-    It 'gibt 1 zurueck, wenn die Datei nur eine Kopfzeile enthaelt' {
+    It 'gibt $false zurueck, wenn die Datei nur eine Kopfzeile enthaelt (typischer Fall: leerer differentieller Export)' {
         $file = Join-Path $TestDrive 'nur-kopf.csv'
         [System.IO.File]::WriteAllText($file, "Kopf`r`n")
-        Get-FileLineCount -Path $file | Should -Be 1
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeFalse
     }
 
-    It 'gibt 0 fuer eine leere Datei zurueck' {
+    It 'gibt $false fuer eine leere Datei zurueck' {
         $file = Join-Path $TestDrive 'leer.csv'
         [System.IO.File]::WriteAllText($file, "")
-        Get-FileLineCount -Path $file | Should -Be 0
+        Test-FileMinLineCount -Path $file -MinLines 1 | Should -BeFalse
     }
 
     It 'wirft, wenn die Datei nicht existiert' {
-        { Get-FileLineCount -Path (Join-Path $TestDrive 'gibtEsNicht.csv') } | Should -Throw
+        { Test-FileMinLineCount -Path (Join-Path $TestDrive 'gibtEsNicht.csv') -MinLines 1 } | Should -Throw
+    }
+
+    It 'wirft, wenn MinLines nicht positiv ist' {
+        $file = Join-Path $TestDrive 'egal.csv'
+        [System.IO.File]::WriteAllText($file, "Kopf`r`n")
+        { Test-FileMinLineCount -Path $file -MinLines 0 } | Should -Throw
     }
 
     It 'liest mit expliziter Windows-1252-Kodierung' {
         $file = Join-Path $TestDrive 'ansi.csv'
         $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes("Straße`r`nZeile1`r`n")
         [System.IO.File]::WriteAllBytes($file, $bytes)
-        Get-FileLineCount -Path $file -Encoding ([System.Text.Encoding]::GetEncoding(1252)) | Should -Be 2
+        Test-FileMinLineCount -Path $file -MinLines 2 -Encoding ([System.Text.Encoding]::GetEncoding(1252)) | Should -BeTrue
+    }
+
+    It 'liest bei einer sehr grossen Datei nachweislich nur die ersten MinLines Zeilen (Fruehausstieg)' {
+        # Eine dritte Zeile, die absichtlich ungueltige UTF-8-Bytes enthaelt,
+        # WUERDE bei vollstaendigem Einlesen keinen Fehler werfen (Replacement-
+        # Character statt Exception) -- das allein beweist den Fruehausstieg
+        # also nicht. Stattdessen: eine Datei mit sehr vielen Folgezeilen
+        # erzeugen und pruefen, dass der Aufruf trotzdem sofort zurueckkommt.
+        $file = Join-Path $TestDrive 'riesig.csv'
+        $writer = [System.IO.StreamWriter]::new($file)
+        try {
+            $writer.WriteLine('Kopf')
+            $writer.WriteLine('Zeile1')
+            for ($i = 0; $i -lt 500000; $i++) {
+                $writer.WriteLine("Fuellzeile$i")
+            }
+        } finally {
+            $writer.Dispose()
+        }
+
+        $elapsed = Measure-Command { Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue }
+        $elapsed.TotalSeconds | Should -BeLessThan 1
     }
 }
