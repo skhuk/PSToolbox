@@ -2,7 +2,7 @@
 
 <#
 .SYNOPSIS
-    Speichert PowerShell-Dateien als UTF-8 mit BOM und entfernt optional Authenticode-Signaturblöcke.
+    Speichert PowerShell-Dateien als UTF-8 mit BOM und entfernt optional Authenticode-Signaturbloecke.
 
 .DESCRIPTION
     Convert-ProjectEncoding.ps1 verarbeitet eine einzelne Datei oder alle
