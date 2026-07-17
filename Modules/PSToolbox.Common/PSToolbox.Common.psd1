@@ -1,5 +1,5 @@
 @{
-    ModuleVersion     = '1.3.0'
+    ModuleVersion     = '1.4.0'
     GUID              = '8a282d78-f41f-4c78-b865-09ea998c699a'
     RootModule        = 'PSToolbox.Common.psm1'
     PowerShellVersion = '5.1'
@@ -18,6 +18,7 @@
         'Invoke-WithRetry',
         'ConvertTo-SafeFileName',
         'Test-PathWritable',
-        'Join-BasePath'
+        'Join-BasePath',
+        'Test-FileMinLineCount'
     )
 }

@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.0] - 2026-07-17
+
+### Neue Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Test-FileMinLineCount` | PSToolbox.Common | Prueft per `StreamReader` mit Fruehausstieg, ob eine Textdatei mindestens `-MinLines` Zeilen hat -- liest dafuer nie mehr als `MinLines` Zeilen ein, unabhaengig von der Gesamtgroesse der Datei. Gedacht fuer schnelle Schwellwert-Pruefungen wie "enthaelt diese CSV ueberhaupt Datenzeilen ausser der Kopfzeile", ohne bei sehr grossen Dateien die komplette Datei einlesen zu muessen. |
+
+---
+
 ## [1.5.1] - 2026-07-16
 
 ### Sonstiges

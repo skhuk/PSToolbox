@@ -649,6 +649,76 @@ function Join-BasePath {
     return Join-Path $BasePath $ChildPath
 }
 
+function Test-FileMinLineCount {
+    <#
+    .SYNOPSIS
+        Prueft, ob eine Textdatei mindestens eine bestimmte Anzahl Zeilen hat.
+
+    .DESCRIPTION
+        Liest per StreamReader hoechstens MinLines Zeilen und bricht dann
+        sofort ab -- bewusst KEIN vollstaendiger Zeilenzaehler. Eine echte
+        Gesamtzaehlung (Get-Content, oder ein StreamReader, der bis EOF
+        liest) skaliert mit der Dateigroesse; fuer eine reine
+        Schwellwertpruefung ("hat die Datei ueberhaupt mehr als die
+        Kopfzeile?") ist das unnoetig -- bei einer Mehr-Gigabyte-CSV mit
+        Millionen Zeilen wuerde eine volle Zaehlung die komplette Datei
+        einlesen, nur um am Ende "ja, mehr als 1 Zeile" zu beantworten.
+        Diese Funktion liest im Erfolgsfall nur die ersten MinLines Zeilen,
+        unabhaengig von der Gesamtgroesse der Datei.
+
+    .PARAMETER Path
+        Pfad zur Datei. Muss existieren.
+
+    .PARAMETER MinLines
+        Geforderte Mindestanzahl Zeilen (positive Ganzzahl).
+
+    .PARAMETER Encoding
+        Encoding zum Lesen (Default: UTF8). Bei Dateien mit abweichender
+        Kodierung (z.B. Windows-1252/ANSI) explizit uebergeben, sonst
+        drohen bei Mehrbyte-/Sonderzeichen falsch erkannte Zeilenumbrueche.
+
+    .EXAMPLE
+        Test-FileMinLineCount -Path 'C:\export\Tabelle.csv' -MinLines 2 -Encoding ([System.Text.Encoding]::GetEncoding(1252))
+        # $true, sobald die Datei (z.B. Kopfzeile + mind. 1 Datenzeile) eine
+        # zweite Zeile hat -- liest dafuer nie mehr als 2 Zeilen ein, auch
+        # wenn die Datei Millionen Zeilen umfasst.
+
+    .OUTPUTS
+        System.Boolean
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [int]$MinLines,
+
+        [System.Text.Encoding]$Encoding = [System.Text.Encoding]::UTF8
+    )
+
+    if ($MinLines -le 0) {
+        throw "MinLines muss positiv sein."
+    }
+
+    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        throw "Datei nicht gefunden: $Path"
+    }
+
+    $count = 0
+    $reader = New-Object System.IO.StreamReader($Path, $Encoding)
+    try {
+        while (($count -lt $MinLines) -and ($null -ne $reader.ReadLine())) {
+            $count++
+        }
+    } finally {
+        $reader.Dispose()
+    }
+
+    return $count -ge $MinLines
+}
+
 Export-ModuleMember -Function `
     Merge-Hashtable, `
     Merge-HashtableDeep, `
@@ -663,4 +733,5 @@ Export-ModuleMember -Function `
     Invoke-WithRetry, `
     ConvertTo-SafeFileName, `
     Test-PathWritable, `
-    Join-BasePath
+    Join-BasePath, `
+    Test-FileMinLineCount
