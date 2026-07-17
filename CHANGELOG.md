@@ -11,6 +11,29 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.1] - 2026-07-17
+
+### Sonstiges
+
+- **Neues Tool [`Tools/Convert-ProjectEncoding.ps1`](Tools/Convert-ProjectEncoding.ps1)**
+  fuer eigenstaendige, direkt ausfuehrbare Skripte (analog `Sign-Project.ps1`):
+  stellt PowerShell-Dateien (`*.ps1`, `*.psm1`, `*.psd1`, `*.ps1xml`, `*.psc1`)
+  auf UTF-8 MIT BOM um -- Windows PowerShell 5.1 interpretiert UTF-8 ohne BOM
+  als ANSI, was bei Umlauten/Sonderzeichen zu Zeichenmuell in Ausgaben fuehrt.
+  Nimmt eine einzelne Datei oder ein Verzeichnis entgegen (`-Recursive` fuer
+  Unterverzeichnisse, `.git` wird dabei immer ausgeschlossen), validiert jede
+  Datei vorher STRIKT als UTF-8 und fasst Nicht-UTF-8-Dateien (z.B. echtes
+  ANSI mit Umlaut-Bytes) bewusst nicht an -- keine automatische
+  ANSI->UTF-8-Konvertierung. Optional `-RemoveSignature` entfernt zusaetzlich
+  einen vorhandenen Authenticode-Signaturblock (`# SIG # Begin/End signature
+  block`) am Dateiende; `signtool.exe` kann Signaturen nur aus PE-Binaries
+  entfernen, bei Skript-Dateien ist der Signaturblock ein reiner
+  Text-Kommentar, das Schneiden des Blocks der einzige Weg. Unterstuetzt
+  `-WhatIf`. Keine `ModuleVersion` betroffen, da kein Modul unter `Modules/`
+  geaendert wurde.
+
+---
+
 ## [1.6.0] - 2026-07-17
 
 ### Neue Funktionen
