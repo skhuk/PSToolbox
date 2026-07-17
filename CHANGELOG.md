@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.0] - 2026-07-17
+
+### Neue Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-FileLineCount` | PSToolbox.Common | Zaehlt die Zeilen einer Textdatei zeilenweise per `StreamReader` statt sie komplett (`Get-Content`) in den Speicher zu laden -- relevant bei sehr grossen Dateien. Optionales `-Encoding` (Default UTF8). Gedacht u.a. fuer schnelle Vorab-Pruefungen wie "enthaelt diese CSV ueberhaupt Datenzeilen ausser der Kopfzeile". |
+
+---
+
 ## [1.5.1] - 2026-07-16
 
 ### Sonstiges

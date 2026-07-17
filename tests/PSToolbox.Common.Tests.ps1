@@ -274,3 +274,40 @@ Describe 'Join-BasePath' {
         Join-BasePath -BasePath 'C:\Temp' -ChildPath 'Export\cron' | Should -Be 'C:\Temp\Export\cron'
     }
 }
+
+Describe 'Get-FileLineCount' {
+    It 'zaehlt mehrere Zeilen korrekt' {
+        $file = Join-Path $TestDrive 'drei-zeilen.csv'
+        [System.IO.File]::WriteAllText($file, "Kopf`r`nZeile1`r`nZeile2`r`n")
+        Get-FileLineCount -Path $file | Should -Be 3
+    }
+
+    It 'zaehlt eine Datei ohne abschliessenden Zeilenumbruch korrekt' {
+        $file = Join-Path $TestDrive 'ohne-abschluss.csv'
+        [System.IO.File]::WriteAllText($file, "Kopf`r`nZeile1")
+        Get-FileLineCount -Path $file | Should -Be 2
+    }
+
+    It 'gibt 1 zurueck, wenn die Datei nur eine Kopfzeile enthaelt' {
+        $file = Join-Path $TestDrive 'nur-kopf.csv'
+        [System.IO.File]::WriteAllText($file, "Kopf`r`n")
+        Get-FileLineCount -Path $file | Should -Be 1
+    }
+
+    It 'gibt 0 fuer eine leere Datei zurueck' {
+        $file = Join-Path $TestDrive 'leer.csv'
+        [System.IO.File]::WriteAllText($file, "")
+        Get-FileLineCount -Path $file | Should -Be 0
+    }
+
+    It 'wirft, wenn die Datei nicht existiert' {
+        { Get-FileLineCount -Path (Join-Path $TestDrive 'gibtEsNicht.csv') } | Should -Throw
+    }
+
+    It 'liest mit expliziter Windows-1252-Kodierung' {
+        $file = Join-Path $TestDrive 'ansi.csv'
+        $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes("Straße`r`nZeile1`r`n")
+        [System.IO.File]::WriteAllBytes($file, $bytes)
+        Get-FileLineCount -Path $file -Encoding ([System.Text.Encoding]::GetEncoding(1252)) | Should -Be 2
+    }
+}

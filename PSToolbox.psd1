@@ -5,7 +5,7 @@
     #
     # Wer nur einzelne Bereiche braucht, importiert stattdessen gezielt das
     # jeweilige Modul-Manifest unter Modules/ (siehe README.md).
-    ModuleVersion        = '1.7.0'
+    ModuleVersion        = '1.8.0'
     GUID                 = 'ffb9970c-1d2f-4b69-a407-1a80537b24a0'
     PowerShellVersion    = '5.1'
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -33,6 +33,7 @@
         'ConvertTo-SafeFileName',
         'Test-PathWritable',
         'Join-BasePath',
+        'Get-FileLineCount',
 
         # PSToolbox.Logging
         'Initialize-Logging',

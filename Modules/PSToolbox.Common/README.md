@@ -29,6 +29,7 @@ Get-Help Merge-Hashtable -Full
 | `ConvertTo-SafeFileName` | Entfernt/ersetzt in Windows-Dateinamen ungueltige Zeichen |
 | `Test-PathWritable` | Prueft per Testdatei, ob ein Verzeichnis beschreibbar ist |
 | `Join-BasePath` | Wie `Join-Path`, aber ein vollstaendiger `ChildPath` (Laufwerksbuchstabe/UNC) ueberschreibt `BasePath` statt angehaengt zu werden |
+| `Get-FileLineCount` | Zaehlt die Zeilen einer Textdatei zeilenweise per StreamReader (ohne die Datei komplett in den Speicher zu laden) |
 
 Jede Funktion hat vollstaendige Comment-Based-Help (`Get-Help <Funktion> -Full`)
 mit Beschreibung, Parametern und Beispielen.

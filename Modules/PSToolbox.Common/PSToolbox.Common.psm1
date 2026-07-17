@@ -649,6 +649,59 @@ function Join-BasePath {
     return Join-Path $BasePath $ChildPath
 }
 
+function Get-FileLineCount {
+    <#
+    .SYNOPSIS
+        Zaehlt die Zeilen einer Textdatei.
+
+    .DESCRIPTION
+        Liest die Datei zeilenweise per StreamReader statt sie komplett
+        (Get-Content) in den Speicher zu laden -- relevant bei sehr grossen
+        Dateien (z.B. Export-CSVs mit Millionen Zeilen). Zaehlt jede von
+        ReadLine() gelieferte Zeile, unabhaengig davon, ob die letzte Zeile
+        mit einem Zeilenumbruch abschliesst. Eine komplett leere Datei
+        liefert 0.
+
+    .PARAMETER Path
+        Pfad zur Datei. Muss existieren.
+
+    .PARAMETER Encoding
+        Encoding zum Lesen (Default: UTF8). Bei Dateien mit abweichender
+        Kodierung (z.B. Windows-1252/ANSI) explizit uebergeben, sonst
+        drohen bei Mehrbyte-/Sonderzeichen falsch erkannte Zeilenumbrueche.
+
+    .EXAMPLE
+        Get-FileLineCount -Path 'C:\export\Tabelle.csv' -Encoding ([System.Text.Encoding]::GetEncoding(1252))
+
+    .OUTPUTS
+        System.Int64
+    #>
+    [CmdletBinding()]
+    [OutputType([long])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [System.Text.Encoding]$Encoding = [System.Text.Encoding]::UTF8
+    )
+
+    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        throw "Datei nicht gefunden: $Path"
+    }
+
+    $count = [long]0
+    $reader = New-Object System.IO.StreamReader($Path, $Encoding)
+    try {
+        while ($null -ne $reader.ReadLine()) {
+            $count++
+        }
+    } finally {
+        $reader.Dispose()
+    }
+
+    return $count
+}
+
 Export-ModuleMember -Function `
     Merge-Hashtable, `
     Merge-HashtableDeep, `
@@ -663,4 +716,5 @@ Export-ModuleMember -Function `
     Invoke-WithRetry, `
     ConvertTo-SafeFileName, `
     Test-PathWritable, `
-    Join-BasePath
+    Join-BasePath, `
+    Get-FileLineCount
