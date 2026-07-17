@@ -109,6 +109,42 @@ Describe 'Convert-ProjectEncoding.ps1 - Einzeldatei' {
         (Get-RawBytes -FilePath $file).Length | Should -Be 3
     }
 
+    It 'versieht eine Datei mit genau einem Inhalts-Byte korrekt mit dem BOM (Regressionstest: Array-Kollaps bei 1 Element)' {
+        $file = Join-Path $TestDrive 'ein-byte.ps1'
+        [System.IO.File]::WriteAllBytes($file, [byte[]]@(0x41))
+
+        $null = & $script:toolPath -Path $file
+
+        $newBytes = Get-RawBytes -FilePath $file
+        $newBytes.Length | Should -Be 4
+        Test-SameBytes -Left ([byte[]]$newBytes[0..2]) -Right $script:bom | Should -BeTrue
+        $newBytes[3] | Should -Be 0x41
+    }
+
+    It 'laesst eine Datei, die nur aus dem BOM besteht, unveraendert (Regressionstest: Array-Kollaps bei 0 Elementen nach BOM-Abtrennung)' {
+        $file = Join-Path $TestDrive 'nur-bom.ps1'
+        [System.IO.File]::WriteAllBytes($file, ([byte[]]@(0xEF, 0xBB, 0xBF)))
+
+        $null = & $script:toolPath -Path $file
+
+        $newBytes = Get-RawBytes -FilePath $file
+        $newBytes.Length | Should -Be 3
+        Test-SameBytes -Left $newBytes -Right $script:bom | Should -BeTrue
+    }
+
+    It 'schneidet bei BOM + genau einem Inhalts-Byte korrekt, wenn eine Signatur entfernt wird (Regressionstest: Array-Kollaps bei 1 Element nach BOM-Abtrennung)' {
+        $file = Join-Path $TestDrive 'bom-ein-byte-signiert.ps1'
+        $signedText = "X`r`n`r`n# SIG # Begin signature block`r`n# ABC`r`n# SIG # End signature block`r`n"
+        New-Utf8File -FilePath $file -Text $signedText -WithBom
+
+        $null = & $script:toolPath -Path $file -RemoveSignature
+
+        $newBytes = Get-RawBytes -FilePath $file
+        Test-SameBytes -Left ([byte[]]$newBytes[0..2]) -Right $script:bom | Should -BeTrue
+        $newText = [System.Text.Encoding]::UTF8.GetString([byte[]]$newBytes[3..($newBytes.Length - 1)])
+        $newText | Should -Be "X`r`n"
+    }
+
     It 'wirft bei nicht existierendem Pfad' {
         { & $script:toolPath -Path (Join-Path $TestDrive 'gibtEsNicht.ps1') } | Should -Throw
     }

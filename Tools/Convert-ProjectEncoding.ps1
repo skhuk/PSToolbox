@@ -250,13 +250,20 @@ function Convert-ProjectFileEncoding {
         $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
 
         $hasBom = ($bytes.Length -ge 3) -and ($bytes[0] -eq 0xEF) -and ($bytes[1] -eq 0xBB) -and ($bytes[2] -eq 0xBF)
+        # Unaeres Komma vor jedem Zweig: ein Array (auch mit 0 oder 1
+        # Element), das ganz normal ueber den Output-Stream eines
+        # if/elseif/else-Ausdrucks "zurueckgegeben" wird, wird von
+        # PowerShell elementweise entrollt -- bei 0 Elementen wird daraus
+        # $null, bei 1 Element ein Skalar statt eines Arrays. Das Komma
+        # zwingt den jeweiligen Zweig, sich selbst als EIN Array-Objekt
+        # auszugeben, unabhaengig von der Elementanzahl.
         $contentBytes = if (-not $hasBom) {
-            $bytes
+            ,$bytes
         } elseif ($bytes.Length -gt 3) {
-            $bytes[3..($bytes.Length - 1)]
+            ,$bytes[3..($bytes.Length - 1)]
         } else {
             # Datei besteht nur aus dem BOM selbst.
-            [byte[]]@()
+            ,([byte[]]@())
         }
 
         # Strikte UTF-8-Validierung IMMER (auch bei vorhandenem BOM, falls
@@ -304,10 +311,11 @@ function Convert-ProjectFileEncoding {
             # (nur BOM vorangestellt). Mit Signatur-Entfernung wird der
             # bereinigte Text neu als UTF-8 kodiert -- fuer gueltiges
             # UTF-8 (oben geprueft) ist decode+encode verlustfrei.
+            # Gleicher Grund fuer das unaere Komma wie bei $contentBytes oben.
             $newContentBytes = if ($signatureRemoved) {
-                [System.Text.Encoding]::UTF8.GetBytes($text)
+                ,[System.Text.Encoding]::UTF8.GetBytes($text)
             } else {
-                [byte[]]$contentBytes
+                ,([byte[]]$contentBytes)
             }
             [System.IO.File]::WriteAllBytes($file.FullName, [byte[]]($bomBytes + $newContentBytes))
 
