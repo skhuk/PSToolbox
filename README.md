@@ -88,6 +88,16 @@ importierbare Module ohne CLI-Charakter enthaelt.
   `-VerifyFile` die Signatur einer einzelnen Datei. Zertifikat wird per
   `-Thumbprint` angegeben oder automatisch aus `Cert:\CurrentUser\My` /
   `Cert:\LocalMachine\My` ermittelt. Siehe `Get-Help .\Tools\Sign-Project.ps1 -Detailed`.
+- [`Tools/Convert-ProjectEncoding.ps1`](Tools/Convert-ProjectEncoding.ps1) -
+  stellt eine einzelne PowerShell-Datei oder alle passenden Dateien eines
+  Verzeichnisses (`-Recursive` fuer Unterverzeichnisse, `.git` immer
+  ausgeschlossen) auf UTF-8 MIT BOM um -- Windows PowerShell 5.1
+  interpretiert UTF-8 ohne BOM sonst als ANSI, was bei Umlauten zu
+  Zeichenmuell fuehrt. Prueft jede Datei vorher strikt als UTF-8 und fasst
+  Nicht-UTF-8-Dateien nicht an (keine automatische ANSI-Konvertierung).
+  Optional `-RemoveSignature` entfernt zusaetzlich einen vorhandenen
+  Authenticode-Signaturblock am Dateiende. Siehe
+  `Get-Help .\Tools\Convert-ProjectEncoding.ps1 -Detailed`.
 
 ## Projektbezogene Konfiguration
 
