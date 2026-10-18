@@ -99,7 +99,7 @@ function Merge-HashtableDeep {
 
     .EXAMPLE
         $config = Import-PowerShellDataFile app.psd1
-        $secrets = ConvertTo-HashtableFromPSCustomObject (Get-Content secrets.json -Raw | ConvertFrom-Json)
+        $secrets = ConvertTo-HashtableFromPSCustomObject (Get-Content secrets.json -Raw -Encoding UTF8 | ConvertFrom-Json)
         $config = Merge-HashtableDeep -Base $config -Override $secrets
 
     .OUTPUTS
@@ -183,7 +183,7 @@ function ConvertTo-HashtableFromPSCustomObject {
         Das zu konvertierende PSCustomObject (bzw. verschachtelte PSCustomObjects).
 
     .EXAMPLE
-        $json = Get-Content secrets.json -Raw | ConvertFrom-Json
+        $json = Get-Content secrets.json -Raw -Encoding UTF8 | ConvertFrom-Json
         $hash = ConvertTo-HashtableFromPSCustomObject -InputObject $json
 
     .OUTPUTS
@@ -228,6 +228,14 @@ function Get-PSToolboxConfig {
         so laeuft dasselbe Skript mit und ohne lokalen Override. Eine
         fehlende Basis-Config dagegen wirft einen Fehler.
 
+        Die JSON-Secrets-Datei wird immer als UTF-8 gelesen (mit oder ohne
+        BOM, in Windows PowerShell 5.1 und 7 gleich). Ohne diese Festlegung
+        liest 5.1 UTF-8 ohne BOM als ANSI und verfaelscht Umlaute und
+        Sonderzeichen. Die .psd1-Basisdatei liest Import-PowerShellDataFile
+        selbst (ohne Encoding-Parameter): enthaelt sie Nicht-ASCII-Zeichen,
+        muss sie unter 5.1 mit UTF-8-BOM gespeichert sein (siehe
+        Tools/Convert-ProjectEncoding.ps1).
+
     .PARAMETER Path
         Pfad zur .psd1-Basis-Konfiguration.
 
@@ -255,14 +263,14 @@ function Get-PSToolboxConfig {
         [string]$SecretsPath = ''
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         throw "Konfigurationsdatei nicht gefunden: '$Path'"
     }
 
-    $config = Import-PowerShellDataFile -Path $Path
+    $config = Import-PowerShellDataFile -LiteralPath $Path
 
-    if (-not [string]::IsNullOrWhiteSpace($SecretsPath) -and (Test-Path $SecretsPath)) {
-        $json      = Get-Content -Path $SecretsPath -Raw | ConvertFrom-Json
+    if (-not [string]::IsNullOrWhiteSpace($SecretsPath) -and (Test-Path -LiteralPath $SecretsPath)) {
+        $json      = Get-Content -LiteralPath $SecretsPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $overrides = ConvertTo-HashtableFromPSCustomObject -InputObject $json
         $config    = Merge-HashtableDeep -Base $config -Override $overrides
     }

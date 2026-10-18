@@ -11,6 +11,18 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.4] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-PSToolboxConfig` | PSToolbox.Common (1.4.2) | Fehlerbehebung: Die JSON-Secrets-Datei wurde ohne `-Encoding` gelesen. Windows PowerShell 5.1 behandelt UTF-8 ohne BOM dann als ANSI, Umlaute und Sonderzeichen in Secrets (z. B. in Passwoertern) wurden verfaelscht (`Mueller` mit Umlaut ergab 7 statt 6 Zeichen); PowerShell 7 las korrekt. Jetzt immer `-Encoding UTF8` (mit und ohne BOM, in beiden Editionen gleich). Zusaetzlich `-LiteralPath` fuer `.psd1`- und JSON-Pfad, damit Pfade mit `[ ]` funktionieren. Die Doku weist darauf hin, dass die `.psd1`-Basisdatei mit Nicht-ASCII-Zeichen unter 5.1 UTF-8 mit BOM braucht (`Import-PowerShellDataFile` hat keinen Encoding-Parameter). Hinweis: In ANSI gespeicherte JSON-Dateien (nach RFC 8259 ohnehin ungueltig) wuerden jetzt falsch gelesen. Doku-Beispiele von `ConvertTo-HashtableFromPSCustomObject` und `Merge-HashtableDeep` mit `-Encoding UTF8` ergaenzt. |
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
 ## [1.6.3] - 2026-10-18
 
 ### Geaenderte Funktionen
