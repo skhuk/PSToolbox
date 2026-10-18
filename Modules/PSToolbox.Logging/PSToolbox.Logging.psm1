@@ -84,6 +84,58 @@ $script:Comment       = $null
 $script:Hostname      = $env:COMPUTERNAME
 $script:ProcessId     = $PID
 
+$script:LogWriteWarnedPaths = @{}
+
+function Add-PSToolboxLogLine {
+    <#
+    .SYNOPSIS
+        Haengt eine Zeile an eine Logdatei an -- fail-soft, mit kurzem Retry.
+
+    .DESCRIPTION
+        Interne Hilfsfunktion (nicht exportiert). Logging darf den eigentlichen
+        Lauf nie abbrechen: Ist die Logdatei gesperrt (z. B. paralleler Lauf)
+        oder nicht erreichbar (Share), wird bis zu MaxAttempts-mal mit
+        DelayMilliseconds Pause erneut versucht. Schlaegt auch der letzte
+        Versuch fehl, wird je Datei und Modulsitzung EINMAL eine Warnung
+        ausgegeben und $false zurueckgegeben -- es wird nichts geworfen,
+        unabhaengig von $ErrorActionPreference des Aufrufers.
+
+    .OUTPUTS
+        [bool] $true, wenn die Zeile geschrieben wurde.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Line,
+
+        [int]$MaxAttempts = 3,
+
+        [int]$DelayMilliseconds = 100
+    )
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            Add-Content -LiteralPath $Path -Value $Line -Encoding UTF8 -ErrorAction Stop
+            return $true
+        } catch {
+            $lastError = $_
+            if ($attempt -lt $MaxAttempts) { Start-Sleep -Milliseconds $DelayMilliseconds }
+        }
+    }
+
+    if (-not $script:LogWriteWarnedPaths.ContainsKey($Path)) {
+        $script:LogWriteWarnedPaths[$Path] = $true
+        Write-Warning "Logdatei '$Path' konnte nicht beschrieben werden (weitere Fehler fuer diese Datei werden nicht erneut gemeldet): $($lastError.Exception.Message)"
+    }
+    return $false
+}
+
 function Initialize-Logging {
     <#
     .SYNOPSIS
@@ -153,8 +205,12 @@ function Initialize-Logging {
     $script:ProcessId     = $PID
     $script:LogDirectory  = $LogDirectory
 
-    if (-not (Test-Path $LogDirectory)) {
-        New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $LogDirectory)) {
+        try {
+            New-Item -ItemType Directory -Path $LogDirectory -Force -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Warning "Log-Verzeichnis '$LogDirectory' konnte nicht angelegt werden: $($_.Exception.Message)"
+        }
     }
 
     $dateStr            = Get-Date -Format 'yyyy-MM-dd'
@@ -168,7 +224,7 @@ function Initialize-Logging {
     # nachfolgenden Datei-Eintraege mit den SQL-Log-Eintraegen dieses Laufs.
     $ts        = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $startLine = "[$ts] [Info    ] [Logging] [] Session gestartet (hostname=$($script:Hostname), processid=$($script:ProcessId), processname=$ProcessName)"
-    Add-Content -Path $script:LogFilePath -Value $startLine -Encoding UTF8
+    $null = Add-PSToolboxLogLine -Path $script:LogFilePath -Line $startLine
 }
 
 function Initialize-LoggingFromConfig {
@@ -309,7 +365,7 @@ function Write-Log {
     $line = "[$ts] [$($Level.PadRight(8))] [$Component] [$Source] $Message"
 
     if ($script:LogFilePath) {
-        Add-Content -Path $script:LogFilePath -Value $line -Encoding UTF8
+        $null = Add-PSToolboxLogLine -Path $script:LogFilePath -Line $line
     }
 
     switch ($Level) {
@@ -638,7 +694,7 @@ function Write-SqlLogEntry {
         $ts       = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $fallback = "[$ts] [Warning  ] [Logging] [] SQL-Logging fehlgeschlagen (State=$State): $_"
         if ($LogFilePath) {
-            Add-Content -Path $LogFilePath -Value $fallback -Encoding UTF8
+            $null = Add-PSToolboxLogLine -Path $LogFilePath -Line $fallback
         }
     }
 }
@@ -840,14 +896,20 @@ function Write-LogEntry {
     }
 
     if (-not [string]::IsNullOrEmpty($LogFilePath)) {
-        $directory = Split-Path -Path $LogFilePath -Parent
-        if ((-not [string]::IsNullOrEmpty($directory)) -and (-not (Test-Path -Path $directory))) {
-            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        # Logging darf den Lauf nicht abbrechen: Verzeichnis-Anlage und Rotation
+        # sind best effort, das Anhaengen selbst ist fail-soft (mit Retry).
+        try {
+            $directory = Split-Path -Path $LogFilePath -Parent
+            if ((-not [string]::IsNullOrEmpty($directory)) -and (-not (Test-Path -LiteralPath $directory))) {
+                New-Item -ItemType Directory -Path $directory -Force -ErrorAction Stop | Out-Null
+            }
+
+            Invoke-LogFileRotation -LogFilePath $LogFilePath -MaxSizeKB $MaxSizeKB -MaxGenerations $MaxGenerations
+        } catch {
+            Write-Verbose "Write-LogEntry: Verzeichnis/Rotation fehlgeschlagen: $($_.Exception.Message)"
         }
 
-        Invoke-LogFileRotation -LogFilePath $LogFilePath -MaxSizeKB $MaxSizeKB -MaxGenerations $MaxGenerations
-
-        Add-Content -Path $LogFilePath -Value $line -Encoding UTF8
+        $null = Add-PSToolboxLogLine -Path $LogFilePath -Line $line
     }
 }
 

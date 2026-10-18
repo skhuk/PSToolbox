@@ -11,6 +11,41 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.4] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-PSToolboxConfig` | PSToolbox.Common (1.4.2) | Fehlerbehebung: Die JSON-Secrets-Datei wurde ohne `-Encoding` gelesen. Windows PowerShell 5.1 behandelt UTF-8 ohne BOM dann als ANSI, Umlaute und Sonderzeichen in Secrets (z. B. in Passwoertern) wurden verfaelscht (`Mueller` mit Umlaut ergab 7 statt 6 Zeichen); PowerShell 7 las korrekt. Jetzt immer `-Encoding UTF8` (mit und ohne BOM, in beiden Editionen gleich). Zusaetzlich `-LiteralPath` fuer `.psd1`- und JSON-Pfad, damit Pfade mit `[ ]` funktionieren. Die Doku weist darauf hin, dass die `.psd1`-Basisdatei mit Nicht-ASCII-Zeichen unter 5.1 UTF-8 mit BOM braucht (`Import-PowerShellDataFile` hat keinen Encoding-Parameter). Hinweis: In ANSI gespeicherte JSON-Dateien (nach RFC 8259 ohnehin ungueltig) wuerden jetzt falsch gelesen. Doku-Beispiele von `ConvertTo-HashtableFromPSCustomObject` und `Merge-HashtableDeep` mit `-Encoding UTF8` ergaenzt. |
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
+## [1.6.3] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Write-Log`, `Write-LogEntry`, `Initialize-Logging`, `Write-SqlLogEntry` (Datei-Fallback) | PSToolbox.Logging (1.2.1) | Fehlerbehebung: Eine gesperrte oder nicht erreichbare Logdatei (paralleler Lauf, Share-Ausfall) liess den Aufrufer abbrechen, sobald `$ErrorActionPreference = 'Stop'` galt. Logging ist jetzt fail-soft: das Anhaengen wird bis zu 3-mal im Abstand von 100 ms wiederholt (interne Hilfsfunktion `Add-PSToolboxLogLine`, nicht exportiert); schlaegt auch der letzte Versuch fehl, gibt es je Datei und Modulsitzung genau EINE Warnung und der Lauf geht weiter. Anlegen des Log-Verzeichnisses (`Initialize-Logging`, `Write-LogEntry`) und die Groessen-Rotation in `Write-LogEntry` sind best effort. Zusaetzlich `-LiteralPath` an diesen Stellen. Signaturen und Rueckgabewerte unveraendert. |
+| `-Trace`-Modus der SQL-Ausfuehrungsfunktionen (`Write-PSToolboxSqlTrace`) | PSToolbox.Sql (1.5.1) | Eine nicht beschreibbare Trace-Logdatei bricht die SQL-Ausfuehrung nicht mehr ab, sondern erzeugt eine Warnung (ohne Retry, da PSToolbox.Sql keine Abhaengigkeit zu PSToolbox.Logging hat). |
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
+## [1.6.2] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-DirectorySize` | PSToolbox.Common (1.4.1) | Fehlerbehebung: Ein nicht lesbarer Unterordner (Zugriff verweigert) liess die ganze Ermittlung mit Ergebnis 0 abbrechen, obwohl die Doku "ueberspringen" beschreibt. Jetzt wird die Summe der lesbaren Dateien geliefert, uebersprungene Elemente erscheinen nur unter `-Verbose`. Ausserdem keine Warnung mehr bei leeren Verzeichnissen (`Measure-Object ... .Sum` schlug unter StrictMode fehl und wurde als Fehler gewertet). Nicht gefundener oder selbst nicht lesbarer Pfad: weiterhin 0 mit Warnung. Rueckgabetyp und Parameter unveraendert. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.1] - 2026-07-17
 
 ### Sonstiges

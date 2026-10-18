@@ -69,6 +69,74 @@ Describe 'Write-LogEntry' {
     }
 }
 
+Describe 'Logging ist fail-soft bei gesperrter oder nicht erreichbarer Logdatei' {
+    BeforeEach {
+        $script:lockStream = $null
+        $script:eapBackup = $global:ErrorActionPreference
+    }
+
+    AfterEach {
+        if ($script:lockStream) { $script:lockStream.Dispose(); $script:lockStream = $null }
+        $global:ErrorActionPreference = $script:eapBackup
+    }
+
+    It 'Write-LogEntry wirft nicht bei gesperrter Datei (ErrorActionPreference=Stop), warnt einmal' {
+        $logPath = Join-Path $TestDrive 'locked_entry.log'
+        Set-Content -Path $logPath -Value 'alt' -Encoding ASCII
+        $script:lockStream = [System.IO.File]::Open($logPath, 'Open', 'ReadWrite', 'None')
+
+        $global:ErrorActionPreference = 'Stop'
+        { Write-LogEntry -Message 'a' -LogFilePath $logPath -NoConsole -WarningVariable w1 -WarningAction SilentlyContinue } |
+            Should -Not -Throw
+        Write-LogEntry -Message 'b' -LogFilePath $logPath -NoConsole -WarningVariable w2 -WarningAction SilentlyContinue
+        @($w1).Count | Should -Be 1
+        @($w2).Count | Should -Be 0
+    }
+
+    It 'Write-Log wirft nicht bei gesperrter Datei' {
+        $dir = Join-Path $TestDrive 'locked_writelog'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0 -LogFilePrefix 'LK'
+        $logFile = Get-ChildItem -Path $dir -Filter 'LK_*.log' | Select-Object -First 1
+        $script:lockStream = [System.IO.File]::Open($logFile.FullName, 'Open', 'ReadWrite', 'None')
+
+        $global:ErrorActionPreference = 'Stop'
+        { Write-Log -Message 'gesperrt' -Level Info -InformationAction SilentlyContinue -WarningAction SilentlyContinue } |
+            Should -Not -Throw
+    }
+
+    It 'wiederholt den Schreibversuch und schreibt, sobald die Sperre faellt' {
+        $logPath = Join-Path $TestDrive 'retry.log'
+        Set-Content -Path $logPath -Value 'alt' -Encoding ASCII
+        $script:lockStream = [System.IO.File]::Open($logPath, 'Open', 'ReadWrite', 'None')
+
+        # Start-Sleep (Pause zwischen den Versuchen) gibt die Sperre frei
+        Mock Start-Sleep { if ($script:lockStream) { $script:lockStream.Dispose(); $script:lockStream = $null } } -ModuleName PSToolbox.Logging
+
+        Write-LogEntry -Message 'nach Retry' -LogFilePath $logPath -NoConsole -WarningVariable w -WarningAction SilentlyContinue
+        @($w).Count | Should -Be 0
+        Get-Content -Path $logPath -Raw | Should -Match 'nach Retry'
+    }
+
+    It 'Initialize-Logging wirft nicht, wenn das Log-Verzeichnis nicht angelegt werden kann' {
+        # Datei an der Stelle des Verzeichnisses -> New-Item scheitert
+        $blocker = Join-Path $TestDrive 'blocker'
+        Set-Content -Path $blocker -Value 'x' -Encoding ASCII
+        $global:ErrorActionPreference = 'Stop'
+        { Initialize-Logging -LogDirectory (Join-Path $blocker 'sub') -RetentionDays 0 -WarningAction SilentlyContinue } |
+            Should -Not -Throw
+    }
+
+    It 'Write-SqlLogEntry-Fallback wirft nicht bei gesperrter Logdatei' {
+        $logPath = Join-Path $TestDrive 'locked_sqlfallback.log'
+        Set-Content -Path $logPath -Value 'alt' -Encoding ASCII
+        $script:lockStream = [System.IO.File]::Open($logPath, 'Open', 'ReadWrite', 'None')
+        $global:ErrorActionPreference = 'Stop'
+        { Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -Description 'x' `
+            -ConnectionString 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1' `
+            -LogFilePath $logPath -WarningAction SilentlyContinue } | Should -Not -Throw
+    }
+}
+
 Describe 'Invoke-LogFileRotation' {
     It 'rotiert nicht unterhalb der Groessenschwelle' {
         $logPath = Join-Path $TestDrive 'klein.log'

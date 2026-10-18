@@ -120,6 +120,33 @@ Describe 'Get-PSToolboxConfig' {
         $cfg.Logging.LogDirectory  | Should -Be 'C:\Logs\Test'
     }
 
+    It 'liest die JSON-Secrets-Datei als UTF-8, auch ohne BOM (Umlaute bleiben erhalten)' {
+        # Umlaut per Codepunkt, damit diese Testdatei ASCII bleibt
+        $wert = 'M' + [char]0x00FC + 'ller-' + [char]0x00DF
+        $json = '{ "SqlLogging": { "Password": "' + $wert + '" } }'
+
+        $ohneBom = Join-Path $TestDrive 'secrets_ohne_bom.json'
+        [System.IO.File]::WriteAllText($ohneBom, $json, (New-Object System.Text.UTF8Encoding($false)))
+        $mitBom = Join-Path $TestDrive 'secrets_mit_bom.json'
+        [System.IO.File]::WriteAllText($mitBom, $json, (New-Object System.Text.UTF8Encoding($true)))
+
+        (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $ohneBom).SqlLogging.Password | Should -BeExactly $wert
+        (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $mitBom).SqlLogging.Password  | Should -BeExactly $wert
+    }
+
+    It 'findet Konfigurations- und Secrets-Dateien in Pfaden mit eckigen Klammern' {
+        $dir = Join-Path $TestDrive 'cfg[1]'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $cfgPath = Join-Path $dir 'c.psd1'
+        $secPath = Join-Path $dir 's.json'
+        Set-Content -LiteralPath $cfgPath -Value '@{ A = 1 }'
+        Set-Content -LiteralPath $secPath -Value '{ "B": 2 }'
+
+        $cfg = Get-PSToolboxConfig -Path $cfgPath -SecretsPath $secPath
+        $cfg.A | Should -Be 1
+        $cfg.B | Should -Be 2
+    }
+
     It 'ignoriert eine nicht vorhandene Secrets-Datei' {
         $cfg = Get-PSToolboxConfig -Path $script:configPath -SecretsPath (Join-Path $TestDrive 'fehlt.json')
         $cfg.SqlLogging.Enabled | Should -BeFalse
@@ -177,6 +204,31 @@ Describe 'Get-DirectorySize' {
         Set-Content -Path (Join-Path $dir 'a.txt')    -Value 'AAAAA'      -Encoding ASCII -NoNewline # 5 Bytes
         Set-Content -Path (Join-Path $subDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII -NoNewline # 10 Bytes
         Get-DirectorySize -Path $dir | Should -Be 15
+    }
+
+    It 'warnt nicht bei einem leeren Verzeichnis' {
+        $dir = Join-Path $TestDrive 'EmptyNoWarn'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $null = Get-DirectorySize -Path $dir -WarningVariable warn -WarningAction SilentlyContinue
+        @($warn).Count | Should -Be 0
+    }
+
+    It 'liefert die Teilsumme, wenn ein Unterordner nicht lesbar ist' {
+        $dir    = Join-Path $TestDrive 'PartialDir'
+        $okDir  = Join-Path $dir 'Ok'
+        $badDir = Join-Path $dir 'Gesperrt'
+        New-Item -ItemType Directory -Path $okDir, $badDir -Force | Out-Null
+        Set-Content -Path (Join-Path $okDir 'a.txt')  -Value 'AAAAA'      -Encoding ASCII -NoNewline # 5 Bytes
+        Set-Content -Path (Join-Path $badDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII -NoNewline # 10 Bytes
+
+        $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        & icacls.exe $badDir /deny "${user}:(OI)(CI)(RX)" | Out-Null
+        try {
+            Get-DirectorySize -Path $dir -WarningVariable warn -WarningAction SilentlyContinue | Should -Be 5
+            @($warn).Count | Should -Be 0
+        } finally {
+            & icacls.exe $badDir /remove:d $user | Out-Null
+        }
     }
 
     It 'gibt 0 zurueck fuer nicht-existierenden Pfad und wirft keine Exception' {
