@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.7.1] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Import-DelimitedFileToSqlTable` | PSToolbox.Sql (1.6.1) | **Nur Dokumentation, Verhalten unveraendert.** Der Default von `-Encoding` (`[System.Text.Encoding]::Default`) ist editionsabhaengig: Windows PowerShell 5.1 = System-ANSI-Codepage (Westeuropa: Windows-1252), PowerShell 7 = UTF-8. Dieselbe ANSI-Datei (z. B. DBISAM-Export) wird unter 7 mit Umlauten als `U+FFFD` gelesen. Der Default bleibt aus Gruenden der Rueckwaertskompatibilitaet bewusst unveraendert; **Empfehlung: `-Encoding` immer explizit angeben**, z. B. `[System.Text.Encoding]::GetEncoding(1252)` (ANSI, funktioniert in beiden Editionen) oder `[System.Text.Encoding]::UTF8`. Hilfe der Funktion (Abschnitt WICHTIG) und README von `PSToolbox.Sql` ergaenzt; zwei Tests (ANSI-Datei mit explizitem Windows-1252 in beiden Editionen; Default bleibt `Encoding.Default`). |
+
+---
+
 ## [1.7.0] - 2026-10-18
 
 ### Geaenderte Funktionen

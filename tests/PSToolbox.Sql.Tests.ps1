@@ -252,6 +252,35 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
         }
     }
 
+    It 'liest eine ANSI-Datei (Windows-1252) mit explizitem Encoding in beiden Editionen gleich' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
+
+            $path = Join-Path $TestDrive 'reader-ansi.csv'
+            # "Name;Wert" / "M" + 0xF6 + "ller;1" als Windows-1252-Bytes
+            $bytes = [byte[]]@(0x4E,0x61,0x6D,0x65,0x3B,0x57,0x65,0x72,0x74,0x0D,0x0A,
+                               0x4D,0xF6,0x6C,0x6C,0x65,0x72,0x3B,0x31,0x0D,0x0A)
+            [System.IO.File]::WriteAllBytes($path, $bytes)
+
+            $ansi = [System.Text.Encoding]::GetEncoding(1252)
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, $ansi, ([char]';'), $true
+            try {
+                $reader.Read() | Should -BeTrue
+                $name = [string]$reader.GetValue(0)
+                $name.Length | Should -Be 6
+                [int]$name[1] | Should -Be 0x00F6
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    }
+
+    It 'Import-DelimitedFileToSqlTable behaelt [System.Text.Encoding]::Default als Parameter-Default (bewusste Entscheidung, nur dokumentiert)' {
+        $param = (Get-Command Import-DelimitedFileToSqlTable).ScriptBlock.Ast.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'Encoding' }
+        $param.DefaultValue.Extent.Text | Should -Be '[System.Text.Encoding]::Default'
+    }
+
     It 'liest Header und Zeilen als Strings, leerer String wird zu DBNull' {
         InModuleScope 'PSToolbox.Sql' {
             Initialize-PSToolboxDelimitedDataReaderType

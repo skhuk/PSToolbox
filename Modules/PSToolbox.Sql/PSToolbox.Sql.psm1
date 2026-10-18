@@ -1064,11 +1064,24 @@ function Import-DelimitedFileToSqlTable {
     .PARAMETER Delimiter
         Feldtrennzeichen (Default ";").
     .PARAMETER Encoding
-        Zeichenkodierung der Quelldatei (Default System.Text.Encoding.Default,
-        die System-ANSI-Codepage -- passend zu Tools, die "Encoding Default"
-        beim Schreiben verwenden, z.B. DBISAM-Exporte). Ohne explizite Angabe
-        wuerde TextFieldParser UTF-8 annehmen, was ANSI-kodierte Umlaute
-        (z.B. "oe"-Umlaut als 0xF6) falsch dekodiert.
+        Zeichenkodierung der Quelldatei (Default System.Text.Encoding.Default
+        -- siehe WICHTIG). Ohne explizite Angabe wuerde TextFieldParser UTF-8
+        annehmen, was ANSI-kodierte Umlaute (z.B. "oe"-Umlaut als 0xF6)
+        falsch dekodiert.
+
+        WICHTIG -- der Default ist editionsabhaengig:
+        - Windows PowerShell 5.1 (.NET Framework): Encoding.Default ist die
+          System-ANSI-Codepage (in Westeuropa Windows-1252). Das passt zu
+          Tools, die "Encoding Default" beim Schreiben verwenden, z.B.
+          DBISAM-Exporte.
+        - PowerShell 7 (.NET): Encoding.Default ist UTF-8. Dieselbe
+          ANSI-Datei wird dort falsch gelesen (Umlaute werden zu U+FFFD).
+        Der Default bleibt aus Gruenden der Rueckwaertskompatibilitaet
+        unveraendert. Wer in beiden Editionen dasselbe Ergebnis braucht,
+        gibt -Encoding IMMER explizit an:
+          -Encoding ([System.Text.Encoding]::GetEncoding(1252))  # ANSI/Windows-1252
+          -Encoding ([System.Text.Encoding]::UTF8)                # UTF-8
+        GetEncoding(1252) funktioniert in beiden Editionen.
     .PARAMETER BatchSize
         SqlBulkCopy-Batchgroesse (Default 5000).
     .PARAMETER CommitEveryBatches

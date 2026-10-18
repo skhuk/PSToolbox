@@ -68,6 +68,28 @@ verwenden (`SqlParameter`), wie es `Write-SqlTableLogEntry` vormacht.
 Dynamische Bezeichner (Tabellen-/Spaltennamen aus Config-/Datendateien)
 immer vorher mit `Test-SqlIdentifier` pruefen.
 
+## Hinweis: `-Encoding` bei `Import-DelimitedFileToSqlTable`
+
+Der Default von `-Encoding` ist `[System.Text.Encoding]::Default` und damit
+**editionsabhaengig**:
+
+| Edition | `[Encoding]::Default` | Folge fuer eine ANSI-Datei (z. B. DBISAM-Export) |
+|---|---|---|
+| Windows PowerShell 5.1 | System-ANSI-Codepage (Westeuropa: Windows-1252) | wird korrekt gelesen |
+| PowerShell 7 | UTF-8 | Umlaute werden zu `U+FFFD` |
+
+Der Default bleibt aus Gruenden der Rueckwaertskompatibilitaet unveraendert.
+Wer in beiden Editionen dasselbe Ergebnis braucht, gibt `-Encoding` immer
+explizit an:
+
+```powershell
+# ANSI / Windows-1252 (funktioniert in 5.1 und 7)
+Import-DelimitedFileToSqlTable ... -Encoding ([System.Text.Encoding]::GetEncoding(1252))
+
+# UTF-8
+Import-DelimitedFileToSqlTable ... -Encoding ([System.Text.Encoding]::UTF8)
+```
+
 ## Hinweis PowerShell 7
 
 Dieses Modul unterstuetzt sowohl Windows PowerShell 5.1 (Desktop) als auch
