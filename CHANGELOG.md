@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.6] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `ConvertTo-HashtableFromPSCustomObject` | PSToolbox.Common (1.4.3) | Fehlerbehebung: Arrays wurden nicht rekursiv umgewandelt, Objekte in JSON-Arrays (z. B. `"Servers": [ { "Host": "a" } ]`) blieben `PSCustomObject`. Jetzt werden Arrays (`object[]`, wie von `ConvertFrom-Json` geliefert) elementweise konvertiert: `PSCustomObject` wird zu Hashtable, verschachtelte Arrays rekursiv, Skalare und `null` bleiben unveraendert, das Ergebnis bleibt ein Array (auch bei einem Element oder leer). Betrifft auch `Get-PSToolboxConfig` mit JSON-Secrets. Verhaltensaenderung: Elemente in Arrays haben jetzt den Typ `Hashtable` statt `PSCustomObject` (Zugriff `.Name` funktioniert bei beiden gleich, Unterschiede z. B. bei `$_.PSObject.Properties` oder `Get-Member`). Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.5] - 2026-10-18
 
 ### Geaenderte Funktionen

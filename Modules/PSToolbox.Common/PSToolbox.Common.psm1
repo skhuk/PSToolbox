@@ -179,6 +179,11 @@ function ConvertTo-HashtableFromPSCustomObject {
         damit das Ergebnis z. B. mit Merge-HashtableDeep weiterverarbeitet
         werden kann.
 
+        Auch Arrays (ConvertFrom-Json liefert object[]) werden elementweise
+        konvertiert: PSCustomObject-Elemente werden zu Hashtables, verschachtelte
+        Arrays rekursiv; Skalare bleiben unveraendert. Das Ergebnis bleibt ein
+        Array, auch bei nur einem Element oder leer.
+
     .PARAMETER InputObject
         Das zu konvertierende PSCustomObject (bzw. verschachtelte PSCustomObjects).
 
@@ -199,14 +204,37 @@ function ConvertTo-HashtableFromPSCustomObject {
     $result = @{}
 
     foreach ($property in $InputObject.PSObject.Properties) {
-        if ($property.Value -is [System.Management.Automation.PSCustomObject]) {
-            $result[$property.Name] = ConvertTo-HashtableFromPSCustomObject -InputObject $property.Value
-        } else {
-            $result[$property.Name] = $property.Value
-        }
+        $result[$property.Name] = ConvertTo-PSToolboxHashtableValue -Value $property.Value
     }
 
     return $result
+}
+
+function ConvertTo-PSToolboxHashtableValue {
+    # Intern (nicht exportiert): wandelt einen einzelnen Wert fuer
+    # ConvertTo-HashtableFromPSCustomObject um - PSCustomObject -> Hashtable,
+    # object[] -> object[] mit umgewandelten Elementen, sonst unveraendert.
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [AllowNull()]
+        $Value
+    )
+
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        return ConvertTo-HashtableFromPSCustomObject -InputObject $Value
+    }
+
+    if ($Value -is [object[]]) {
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($item in $Value) {
+            $items.Add((ConvertTo-PSToolboxHashtableValue -Value $item))
+        }
+        # Komma-Operator: das Array nicht beim Zurueckgeben entrollen
+        return , $items.ToArray()
+    }
+
+    return $Value
 }
 
 function Get-PSToolboxConfig {

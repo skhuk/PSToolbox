@@ -84,6 +84,55 @@ Describe 'ConvertTo-HashtableFromPSCustomObject' {
         $result.Nested.Inner   | Should -Be 42
         $result.Nested.Deeper.Flag | Should -BeTrue
     }
+
+    It 'konvertiert PSCustomObject-Elemente in Arrays zu Hashtables' {
+        $json = '{ "Items": [ { "Name": "a", "N": 1 }, { "Name": "b", "N": 2 } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.Items.Count   | Should -Be 2
+        $result.Items[0]      | Should -BeOfType [hashtable]
+        $result.Items[1].Name | Should -Be 'b'
+        $result.Items[1].N    | Should -Be 2
+    }
+
+    It 'behaelt ein Array mit nur einem Objekt als Array' {
+        $json = '{ "Items": [ { "Name": "a" } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        , $result.Items | Should -BeOfType [object[]]
+        @($result.Items).Count | Should -Be 1
+        $result.Items[0] | Should -BeOfType [hashtable]
+    }
+
+    It 'konvertiert verschachtelte Arrays und Objekte in Arrays rekursiv' {
+        $json = '{ "M": [ [ { "x": 1 } ], [ 2, 3 ] ], "O": [ { "In": [ { "y": 5 } ] } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.M[0][0]    | Should -BeOfType [hashtable]
+        $result.M[0][0].x  | Should -Be 1
+        $result.M[1].Count | Should -Be 2
+        $result.M[1][1]    | Should -Be 3
+        $result.O[0].In[0] | Should -BeOfType [hashtable]
+        $result.O[0].In[0].y | Should -Be 5
+    }
+
+    It 'laesst Arrays aus Skalaren und leere Arrays unveraendert' {
+        $json = '{ "S": [ 1, 2, 3 ], "T": [ "a", "b" ], "E": [] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.S.Count | Should -Be 3
+        $result.S[2]    | Should -Be 3
+        $result.T[0]    | Should -Be 'a'
+        @($result.E).Count | Should -Be 0
+        , $result.E | Should -BeOfType [object[]]
+    }
+
+    It 'behaelt null-Werte und Skalare neben Arrays' {
+        $json = '{ "A": null, "B": "text", "C": [ null, 1 ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.ContainsKey('A') | Should -BeTrue
+        $result.A | Should -BeNullOrEmpty
+        $result.B | Should -Be 'text'
+        $result.C.Count | Should -Be 2
+        $result.C[0] | Should -BeNullOrEmpty
+        $result.C[1] | Should -Be 1
+    }
 }
 
 Describe 'Get-PSToolboxConfig' {
@@ -132,6 +181,15 @@ Describe 'Get-PSToolboxConfig' {
 
         (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $ohneBom).SqlLogging.Password | Should -BeExactly $wert
         (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $mitBom).SqlLogging.Password  | Should -BeExactly $wert
+    }
+
+    It 'liefert Objekte in JSON-Arrays der Secrets-Datei als Hashtables' {
+        $secretsPath = Join-Path $TestDrive 'secrets_array.json'
+        Set-Content -Path $secretsPath -Value '{ "Servers": [ { "Host": "a" }, { "Host": "b" } ] }'
+        $cfg = Get-PSToolboxConfig -Path $script:configPath -SecretsPath $secretsPath
+        $cfg.Servers.Count   | Should -Be 2
+        $cfg.Servers[1]      | Should -BeOfType [hashtable]
+        $cfg.Servers[1].Host | Should -Be 'b'
     }
 
     It 'findet Konfigurations- und Secrets-Dateien in Pfaden mit eckigen Klammern' {
