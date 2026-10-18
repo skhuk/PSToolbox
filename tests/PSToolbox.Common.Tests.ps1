@@ -455,3 +455,29 @@ Describe 'Test-FileMinLineCount' {
         $elapsed.TotalSeconds | Should -BeLessThan 1
     }
 }
+
+Describe 'Pfade mit eckigen Klammern (Common)' {
+    BeforeEach {
+        $script:brk = Join-Path $TestDrive ('br[' + [Guid]::NewGuid().ToString('N').Substring(0, 6) + ']')
+        New-Item -ItemType Directory -Path $script:brk -Force | Out-Null
+    }
+
+    It 'Test-PathWritable erkennt ein beschreibbares Verzeichnis mit [ ] im Namen' {
+        Test-PathWritable -Path $script:brk | Should -BeTrue
+    }
+
+    It 'Test-FileMinLineCount liest eine Datei in einem Verzeichnis mit [ ] im Namen' {
+        $file = Join-Path $script:brk 'z.csv'
+        [System.IO.File]::WriteAllText($file, "kopf`r`nzeile`r`n")
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue
+    }
+
+    It 'Test-PSToolboxFileSigned erkennt den Signaturblock bei Pfaden mit [ ]' {
+        $signed   = Join-Path $script:brk 's.ps1'
+        $unsigned = Join-Path $script:brk 'u.ps1'
+        [System.IO.File]::WriteAllText($signed, "Write-Host 1`r`n# SIG # Begin signature block`r`n")
+        [System.IO.File]::WriteAllText($unsigned, "Write-Host 1`r`n")
+        Test-PSToolboxFileSigned -Path $signed   | Should -BeTrue
+        Test-PSToolboxFileSigned -Path $unsigned | Should -BeFalse
+    }
+}

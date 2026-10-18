@@ -286,7 +286,12 @@ function Set-ProjectFileSignature {
 
     $cert = Find-CodeSigningCertificate -Thumbprint $Thumbprint
 
-    $files = Get-ChildItem -Path $Path -Recurse -File -Include $Include
+    # -LiteralPath (Pfade mit [ ]); Windows PowerShell 5.1 ignoriert -Include
+    # zusammen mit -LiteralPath, daher werden die Muster hier per -like angewendet.
+    $files = @(Get-ChildItem -LiteralPath $Path -Recurse -File | Where-Object {
+        $name = $_.Name
+        @($Include | Where-Object { $name -like $_ }).Count -gt 0
+    })
 
     $lastSignedFile = $null
 

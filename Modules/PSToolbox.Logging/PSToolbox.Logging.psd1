@@ -1,5 +1,5 @@
 @{
-    ModuleVersion        = '1.2.1'
+    ModuleVersion        = '1.2.2'
     GUID                 = '41f33ccf-d4dc-4d42-b29f-0148bc21a9e8'
     RootModule           = 'PSToolbox.Logging.psm1'
     PowerShellVersion    = '5.1'

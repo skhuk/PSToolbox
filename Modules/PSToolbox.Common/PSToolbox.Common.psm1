@@ -335,9 +335,9 @@ function Test-PSToolboxFileSigned {
         [string]$Path
     )
 
-    if (-not (Test-Path -Path $Path)) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
 
-    $content = Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue
+    $content = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrEmpty($content)) { return $false }
 
     return $content.Contains("# SIG # Begin signature block")
@@ -626,14 +626,14 @@ function Test-PathWritable {
         [string]$Path
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         return $false
     }
 
     $probeFile = Join-Path $Path (".pstoolbox_writetest_$([Guid]::NewGuid().ToString('N')).tmp")
     try {
         [System.IO.File]::WriteAllText($probeFile, 'probe')
-        Remove-Item -Path $probeFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
         return $true
     } catch {
         return $false
@@ -753,7 +753,7 @@ function Test-FileMinLineCount {
         throw "MinLines muss positiv sein."
     }
 
-    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Datei nicht gefunden: $Path"
     }
 

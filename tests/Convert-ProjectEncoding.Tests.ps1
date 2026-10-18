@@ -258,3 +258,29 @@ Describe 'Convert-ProjectEncoding.ps1 - WhatIf' {
         Test-SameBytes -Left $newBytes -Right $originalBytes | Should -BeTrue
     }
 }
+
+Describe 'Convert-ProjectEncoding.ps1 - Pfade mit eckigen Klammern' {
+    BeforeEach {
+        $script:dir = Join-Path $TestDrive ('br[' + [Guid]::NewGuid().ToString('N').Substring(0, 6) + ']')
+        $script:subDir = Join-Path $script:dir 'Sub'
+        New-Item -ItemType Directory -Path $script:subDir -Force | Out-Null
+        New-Utf8File -FilePath (Join-Path $script:dir 'top.ps1') -Text "top`r`n"
+        New-Utf8File -FilePath (Join-Path $script:dir 'notiz.txt') -Text "txt`r`n"
+        New-Utf8File -FilePath (Join-Path $script:subDir 'unten.psm1') -Text "unten`r`n"
+    }
+
+    It 'verarbeitet ohne -Recursive die oberste Ebene eines Verzeichnisses mit [ ]' {
+        $null = & $script:toolPath -Path $script:dir
+
+        (Get-RawBytes -FilePath (Join-Path $script:dir 'top.ps1'))[0] | Should -Be 0xEF
+        (Get-RawBytes -FilePath (Join-Path $script:dir 'notiz.txt'))[0] | Should -Not -Be 0xEF
+        (Get-RawBytes -FilePath (Join-Path $script:subDir 'unten.psm1'))[0] | Should -Not -Be 0xEF
+    }
+
+    It 'verarbeitet mit -Recursive auch Unterverzeichnisse eines Verzeichnisses mit [ ]' {
+        $null = & $script:toolPath -Path $script:dir -Recursive
+
+        (Get-RawBytes -FilePath (Join-Path $script:dir 'top.ps1'))[0] | Should -Be 0xEF
+        (Get-RawBytes -FilePath (Join-Path $script:subDir 'unten.psm1'))[0] | Should -Be 0xEF
+    }
+}

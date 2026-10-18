@@ -1,5 +1,5 @@
 @{
-    ModuleVersion     = '1.4.3'
+    ModuleVersion     = '1.4.4'
     GUID              = '8a282d78-f41f-4c78-b865-09ea998c699a'
     RootModule        = 'PSToolbox.Common.psm1'
     PowerShellVersion = '5.1'

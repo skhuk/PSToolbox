@@ -11,6 +11,23 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.7] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Test-PathWritable`, `Test-FileMinLineCount`, `Test-PSToolboxFileSigned` | PSToolbox.Common (1.4.4) | Fehlerbehebung: Pfade mit `[` `]` im Namen wurden als Wildcard-Muster gedeutet (z. B. lieferte `Test-PathWritable` fuer ein existierendes, beschreibbares Verzeichnis `ordner[1]` `$false`). Jetzt durchgaengig `-LiteralPath`. |
+| `Invoke-LogRotation`, `Invoke-LogFileRotation` | PSToolbox.Logging (1.2.2) | Fehlerbehebung: gleiche Ursache - Rotation und Aufraeumen funktionierten in Verzeichnissen mit `[ ]` im Namen nicht. Jetzt `-LiteralPath`. Das `-Filter`/`-Pattern` bleibt ein Wildcard-Muster fuer den Dateinamen. |
+
+### Sonstiges
+
+- **Tools/Convert-ProjectEncoding.ps1** und **Tools/Sign-Project.ps1**: Pfade mit `[ ]` werden jetzt ebenfalls korrekt behandelt (`-LiteralPath`). **Wichtig fuer PS 5.1:** Windows PowerShell 5.1 ignoriert `-Include` zusammen mit `-LiteralPath` (PowerShell 7 beachtet es); die Include-Muster werden deshalb in beiden Tools selbst per `-like` auf den Dateinamen angewendet. Verhalten fuer normale Pfade unveraendert. Keine `ModuleVersion` betroffen. `Sign-Project.ps1` hat keine automatischen Tests (braucht signtool.exe und Zertifikat); die Aenderung folgt dem getesteten Muster in `Convert-ProjectEncoding.ps1`.
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
 ## [1.6.6] - 2026-10-18
 
 ### Geaenderte Funktionen
