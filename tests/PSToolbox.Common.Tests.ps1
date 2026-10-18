@@ -579,7 +579,7 @@ Describe 'Pfade mit eckigen Klammern (Common)' {
     It 'Test-PSToolboxFileSigned erkennt den Signaturblock bei Pfaden mit [ ]' {
         $signed   = Join-Path $script:brk 's.ps1'
         $unsigned = Join-Path $script:brk 'u.ps1'
-        [System.IO.File]::WriteAllText($signed, "Write-Host 1`r`n# SIG # Begin signature block`r`n")
+        [System.IO.File]::WriteAllText($signed, "Write-Host 1`r`n# SIG # Begin signature block`r`n# MIIFxQYJKoZIhvcNAQcC`r`n# SIG # End signature block`r`n")
         [System.IO.File]::WriteAllText($unsigned, "Write-Host 1`r`n")
         Test-PSToolboxFileSigned -Path $signed   | Should -BeTrue
         Test-PSToolboxFileSigned -Path $unsigned | Should -BeFalse

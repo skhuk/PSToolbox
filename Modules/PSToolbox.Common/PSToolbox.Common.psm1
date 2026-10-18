@@ -315,14 +315,22 @@ function Test-PSToolboxFileSigned {
     .DESCRIPTION
         Bewusst KEINE kryptografische Gueltigkeits-/Vertrauenspruefung
         (kein Get-AuthenticodeSignature/Zertifikatskette) -- es wird nur
-        auf das Vorhandensein der von Set-AuthenticodeSignature
-        angehaengten Markerzeile "# SIG # Begin signature block" geprueft.
+        auf das Vorhandensein des von Set-AuthenticodeSignature
+        angehaengten Signaturblocks geprueft: eine Zeile, die mit
+        "# SIG # Begin signature block" beginnt (am Zeilenanfang, ohne
+        Einrueckung), gefolgt von einer Zeile "# SIG # End signature block".
         Gedacht fuer Faelle, in denen Dateien manuell signiert werden, um
         nachtraegliche Veraenderung erkennbar zu machen (nicht um die
         Signatur selbst zu verifizieren).
 
-        Eine nicht existierende Datei gilt als nicht signiert (kein
-        Fehler).
+        Der Marker-Text allein genuegt nicht: steht er eingerueckt, in einem
+        Kommentar oder in einem String (wie im Quelltext dieser Funktion
+        selbst), gilt die Datei als nicht signiert. Ein Begin-Marker ohne
+        nachfolgenden End-Marker (abgeschnittener Block) gilt ebenfalls als
+        nicht signiert.
+
+        Eine nicht existierende oder leere Datei gilt als nicht signiert
+        (kein Fehler).
 
     .PARAMETER Path
         Pfad zur zu pruefenden Datei (z.B. eine .psd1- oder .ps1-Datei).
@@ -340,7 +348,12 @@ function Test-PSToolboxFileSigned {
     $content = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrEmpty($content)) { return $false }
 
-    return $content.Contains("# SIG # Begin signature block")
+    # Marker nur als eigene Zeile am Zeilenanfang werten (CRLF und LF), Begin vor End
+    $begin = [regex]::Match($content, '(?m)^# SIG # Begin signature block[ \t]*\r?$')
+    if (-not $begin.Success) { return $false }
+
+    $afterBegin = $content.Substring($begin.Index + $begin.Length)
+    return [regex]::IsMatch($afterBegin, '(?m)^# SIG # End signature block[ \t]*\r?$')
 }
 
 function Resolve-ValueOrDefault {

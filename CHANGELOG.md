@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.8.1] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Test-PSToolboxFileSigned` | PSToolbox.Common (1.5.1) | Fehlerbehebung: Die Funktion suchte den Text `# SIG # Begin signature block` irgendwo in der Datei und meldete dadurch Dateien als signiert, die den Marker nur in einem Kommentar oder String enthalten, u. a. das unsignierte `PSToolbox.Common.psm1` selbst (Hilfe und Code dieser Funktion). Jetzt zaehlt nur ein echter Signaturblock: eine Zeile `# SIG # Begin signature block` am Zeilenanfang (ohne Einrueckung), gefolgt von einer Zeile `# SIG # End signature block`, in LF und CRLF. Ein Begin-Marker ohne End-Marker (abgeschnittener Block), ein End-Marker vor dem Begin-Marker und eingerueckte oder in Strings stehende Marker gelten als nicht signiert. Weiterhin eine reine Textpruefung ohne Zertifikatspruefung; nicht vorhandene oder leere Datei: `$false`. **Verhaltensaenderung fuer Aufrufer:** Dateien mit nur einer Begin-Zeile (ohne End-Zeile) wurden frueher als signiert gemeldet. Echte, von `Set-AuthenticodeSignature` signierte Dateien enthalten beide Zeilen und werden wie bisher erkannt (nicht gegen eine real signierte Datei geprueft: kein Codesigning-Zertifikat verfuegbar; die Testbloecke bilden das Format nach). Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.8.0] - 2026-10-18
 
 ### Geaenderte Funktionen
