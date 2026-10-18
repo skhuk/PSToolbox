@@ -6,8 +6,28 @@ je Version gruppiert nach **Neue Funktionen**, **Geaenderte Funktionen**,
 Update schnell sehen, welche Funktionen betroffen sind.
 
 Versionsschema (SemVer-Idee): Major = Breaking Change, Minor = neue
-Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
-`.psd1`-Manifesten wird synchron gepflegt.
+Funktionalitaet, Patch = Fehlerbehebung.
+
+Die Ueberschriften dieses Changelogs sind **Release-Nummern des Gesamtpakets**
+und zaehlen eigenstaendig. Sie sind nicht identisch mit der `ModuleVersion`
+im Root-Manifest `PSToolbox.psd1` und den Modul-Manifesten
+(`Modules\<Modul>\<Modul>.psd1`); jedes Manifest zaehlt seine eigene Version
+und wird bei einer Aenderung seines Moduls angehoben. Massgeblich fuer
+`Import-Module` und Abhaengigkeiten ist die `ModuleVersion` des jeweiligen
+Manifests. Welche Modulversion ein Release enthaelt, steht in der Spalte
+`Modul` der Tabellen unten (z. B. "PSToolbox.Common (1.7.0)").
+
+---
+
+## [1.10.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `ConvertTo-SafeFileName` | PSToolbox.Common (1.7.0) | Neuer Schalter `-AvoidReservedNames`: stellt reservierten Windows-Geraetenamen (CON, PRN, AUX, NUL, COM1-9, LPT1-9, auch mit Erweiterung wie `aux.txt`) einen Unterstrich voran. **Ohne den Schalter unveraendert.** |
+| `Join-BasePath` | PSToolbox.Common (1.7.0) | Ein `ChildPath` mit Schraegstrich-Wurzel (`C:/Tools/x.exe`, `//server/share/x.exe`) gilt jetzt wie die Backslash-Form als vollstaendig und wird unveraendert zurueckgegeben. Vorher wurde er an `BasePath` angehaengt und ergab einen ungueltigen Pfad (`base\C:/Tools/x.exe`). |
+| `Test-PSToolboxFileSigned` | PSToolbox.Common (1.7.0) | Hat jetzt `[CmdletBinding()]` und `[OutputType([bool])]` wie die uebrigen Funktionen; Verhalten unveraendert. |
 
 ---
 

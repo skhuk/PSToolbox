@@ -142,7 +142,9 @@ und CI-Beispielen steht in [`docs/EINBINDUNG.md`](docs/EINBINDUNG.md).
 - Keine projektspezifische Logik oder Namensgebung in den Modulen unter `Modules/`
 - Jede Aenderung an Funktionen wird im [`CHANGELOG.md`](CHANGELOG.md)
   dokumentiert (neue/geaenderte/entfernte Funktionen je Version), die
-  `ModuleVersion` in den Manifesten wird synchron angehoben
+  `ModuleVersion` des betroffenen Moduls und des Root-Manifests wird
+  angehoben (die Release-Nummern im Changelog zaehlen eigenstaendig, siehe
+  Kopf von `CHANGELOG.md`)
 
 ## Hinweis PowerShell 7
 
