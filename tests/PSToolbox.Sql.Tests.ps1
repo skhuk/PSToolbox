@@ -64,6 +64,49 @@ Describe 'Format-SqlLiteral' {
     It 'wirft bei $null' {
         { Format-SqlLiteral -Value $null } | Should -Throw
     }
+
+    Context 'optionale Schalter (Default bleibt unveraendert)' {
+        It '-UnicodeStrings setzt das N-Praefix nur bei Strings, Quotes werden weiter verdoppelt' {
+            Format-SqlLiteral -Value "O'Brien" -UnicodeStrings | Should -Be "N'O''Brien'"
+            $text = 'Stra' + [char]0x00DF + 'e ' + [char]0x20AC
+            Format-SqlLiteral -Value $text -UnicodeStrings | Should -BeExactly ("N'" + $text + "'")
+        }
+
+        It '-UnicodeStrings aendert Zahlen, Bool und DateTime nicht' {
+            Format-SqlLiteral -Value 42 -UnicodeStrings    | Should -Be '42'
+            Format-SqlLiteral -Value $true -UnicodeStrings | Should -Be '1'
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05') -UnicodeStrings | Should -Be "'2026-01-02 03:04:05'"
+        }
+
+        It 'ohne Schalter bleibt ein String ohne N-Praefix' {
+            Format-SqlLiteral -Value 'abc' | Should -Be "'abc'"
+        }
+
+        It '-DateTimeFormat LanguageNeutral liefert yyyyMMdd HH:mm:ss.fff' {
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05.678') -DateTimeFormat LanguageNeutral |
+                Should -Be "'20260102 03:04:05.678'"
+        }
+
+        It '-DateTimeFormat Default entspricht dem bisherigen Format' {
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05.678') -DateTimeFormat Default |
+                Should -Be "'2026-01-02 03:04:05'"
+        }
+
+        It 'LanguageNeutral ist unabhaengig von der aktuellen Kultur' {
+            $alt = [System.Threading.Thread]::CurrentThread.CurrentCulture
+            try {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+                Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05') -DateTimeFormat LanguageNeutral |
+                    Should -Be "'20260102 03:04:05.000'"
+            } finally {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $alt
+            }
+        }
+
+        It 'lehnt unbekannte DateTimeFormat-Werte ab' {
+            { Format-SqlLiteral -Value (Get-Date) -DateTimeFormat Banane } | Should -Throw
+        }
+    }
 }
 
 Describe 'Expand-SqlPlaceholders' {
@@ -105,6 +148,18 @@ Describe 'Expand-SqlPlaceholders' {
     It 'behandelt Sonderzeichen in Namen und Werten wortwoertlich (kein Regex, kein $-Ersatz)' {
         $r = Expand-SqlPlaceholders -Template 'v = :a.b' -ResolvedValues @{ 'a.b' = 'x$1\y' }
         $r | Should -BeExactly "v = 'x`$1\y'"
+    }
+
+    It 'reicht -UnicodeStrings und -DateTimeFormat an Format-SqlLiteral durch' {
+        $r = Expand-SqlPlaceholders -Template 'n = :n AND t = :t AND z = :z' `
+            -ResolvedValues @{ n = 'abc'; t = ([datetime]'2026-01-02T03:04:05'); z = 7 } `
+            -UnicodeStrings -DateTimeFormat LanguageNeutral
+        $r | Should -Be "n = N'abc' AND t = '20260102 03:04:05.000' AND z = 7"
+    }
+
+    It 'ohne Schalter bleibt die Ausgabe von Expand-SqlPlaceholders unveraendert' {
+        Expand-SqlPlaceholders -Template ':n :t' -ResolvedValues @{ n = 'abc'; t = ([datetime]'2026-01-02T03:04:05') } |
+            Should -Be "'abc' '2026-01-02 03:04:05'"
     }
 
     It 'gibt das Template unveraendert zurueck, wenn keine Werte uebergeben werden' {

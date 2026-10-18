@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.7.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Format-SqlLiteral`, `Expand-SqlPlaceholders` | PSToolbox.Sql (1.6.0) | Neue optionale Parameter, **Standardverhalten unveraendert** (rueckwaertskompatibel, daher Minor): `-UnicodeStrings` gibt Strings als `N'...'` aus. Ohne `N` gehen Zeichen ausserhalb der Datenbank-Codepage verloren (am echten SQL Server geprueft: kyrillisches Zeichen wird zu `?`). `-DateTimeFormat LanguageNeutral` gibt DateTime als `'yyyyMMdd HH:mm:ss.fff'` aus. Das bisherige Format `'yyyy-MM-dd HH:mm:ss'` wird bei `datetime`/`smalldatetime` je nach `SET LANGUAGE`/`DATEFORMAT` gelesen (am echten SQL Server geprueft: unter `SET LANGUAGE German` wird der 2. Januar zum 1. Februar) und hat keine Sekundenbruchteile; `datetime` rundet selbst auf 1/300 s. `Expand-SqlPlaceholders` reicht beide Parameter an `Format-SqlLiteral` durch. Neuer README-Abschnitt in `PSToolbox.Sql`. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.7] - 2026-10-18
 
 ### Geaenderte Funktionen
