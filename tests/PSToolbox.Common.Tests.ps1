@@ -338,6 +338,110 @@ Describe 'Invoke-WithRetry' {
             Should -Throw 'immer fehlerhaft'
         $script:calls | Should -Be 2
     }
+
+    It 'fuehrt bei MaxAttempts unter 1 genau einen Versuch aus' {
+        $script:calls = 0
+        { Invoke-WithRetry -MaxAttempts 0 -DelaySeconds 0 -ScriptBlock { $script:calls++; throw 'x' } } | Should -Throw
+        $script:calls | Should -Be 1
+    }
+
+    It 'meldet jeden Fehlversuch (ausser dem letzten) als Warnung' {
+        $script:calls = 0
+        $w = $null
+        try {
+            Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -WarningVariable w -WarningAction SilentlyContinue -ScriptBlock {
+                $script:calls++; throw 'x' }
+        } catch { $null = $_ }
+        $script:calls | Should -Be 3
+        @($w).Count | Should -Be 2
+    }
+
+    Context 'nicht-terminierende Fehler (-StopOnError)' {
+        It 'wiederholt einen nicht-terminierenden Cmdlet-Fehler standardmaessig NICHT (dokumentierter Fallstrick)' {
+            $script:calls = 0
+            $missing = Join-Path $TestDrive 'gibt-es-nicht.txt'
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -ScriptBlock {
+                $script:calls++
+                Remove-Item -LiteralPath $missing -ErrorAction Continue
+            } } | Should -Not -Throw
+            $script:calls | Should -Be 1
+        }
+
+        It 'wiederholt ihn mit -StopOnError und gibt bei spaeterem Erfolg den Wert zurueck' {
+            $script:calls = 0
+            $file = Join-Path $TestDrive 'spaeter.txt'
+            $result = Invoke-WithRetry -StopOnError -MaxAttempts 3 -DelaySeconds 0 -ScriptBlock {
+                $script:calls++
+                if ($script:calls -eq 2) { Set-Content -LiteralPath $file -Value 'da' }
+                Get-Content -LiteralPath $file
+            }
+            $result | Should -Be 'da'
+            $script:calls | Should -Be 2
+        }
+
+        It 'stellt $ErrorActionPreference nach -StopOnError wieder her (auch bei Fehler)' {
+            $before = $global:ErrorActionPreference
+            $global:ErrorActionPreference = 'Continue'
+            try {
+                # Waehrend des ScriptBlocks gilt 'Stop', danach wieder der alte Wert
+                Invoke-WithRetry -StopOnError -MaxAttempts 1 -DelaySeconds 0 -ScriptBlock { $global:ErrorActionPreference } |
+                    Should -Be 'Stop'
+                $global:ErrorActionPreference | Should -Be 'Continue'
+
+                { Invoke-WithRetry -StopOnError -MaxAttempts 1 -DelaySeconds 0 -ScriptBlock { throw 'x' } } | Should -Throw 'x'
+                $global:ErrorActionPreference | Should -Be 'Continue'
+            } finally {
+                $global:ErrorActionPreference = $before
+            }
+        }
+    }
+
+    Context '-ShouldRetry' {
+        It 'bricht bei einem nicht wiederholbaren Fehler sofort ab (ein Versuch, keine Warnung)' {
+            $script:calls = 0
+            $w = $null
+            $message = $null
+            try {
+                Invoke-WithRetry -MaxAttempts 5 -DelaySeconds 0 -WarningVariable w -WarningAction SilentlyContinue `
+                    -ShouldRetry { $_.Exception -is [System.IO.IOException] } -ScriptBlock {
+                        $script:calls++
+                        throw [System.UnauthorizedAccessException]::new('Zugriff verweigert')
+                    }
+            } catch { $message = $_.Exception.Message }
+            $message | Should -Be 'Zugriff verweigert'
+            $script:calls | Should -Be 1
+            @($w).Count | Should -Be 0
+        }
+
+        It 'wiederholt einen Fehler, den ShouldRetry zulaesst' {
+            $script:calls = 0
+            $result = Invoke-WithRetry -MaxAttempts 4 -DelaySeconds 0 -WarningAction SilentlyContinue `
+                -ShouldRetry { $_.Exception -is [System.IO.IOException] } -ScriptBlock {
+                    $script:calls++
+                    if ($script:calls -lt 3) { throw [System.IO.IOException]::new('gesperrt') }
+                    'ok'
+                }
+            $result | Should -Be 'ok'
+            $script:calls | Should -Be 3
+        }
+
+        It 'uebergibt den ErrorRecord als $_ und bricht ohne Ausgabe des Blocks ab' {
+            $script:seen = $null
+            $script:calls = 0
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -ShouldRetry { $script:seen = $_ } -ScriptBlock {
+                $script:calls++; throw 'meldung' } } | Should -Throw 'meldung'
+            $script:seen | Should -BeOfType [System.Management.Automation.ErrorRecord]
+            $script:seen.Exception.Message | Should -Be 'meldung'
+            $script:calls | Should -Be 1
+        }
+
+        It 'ohne ShouldRetry werden weiterhin alle Fehler wiederholt (Standard unveraendert)' {
+            $script:calls = 0
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -WarningAction SilentlyContinue -ScriptBlock {
+                $script:calls++; throw [System.UnauthorizedAccessException]::new('x') } } | Should -Throw
+            $script:calls | Should -Be 3
+        }
+    }
 }
 
 Describe 'Test-PathWritable' {

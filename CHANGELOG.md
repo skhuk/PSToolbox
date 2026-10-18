@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.8.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Invoke-WithRetry` | PSToolbox.Common (1.5.0) | Zwei neue optionale Parameter, **Standardverhalten unveraendert** (rueckwaertskompatibel, daher Minor): `-ShouldRetry <ScriptBlock>` entscheidet anhand des ErrorRecords (`$_`), ob ein Fehler wiederholt wird; liefert der Block nicht `$true`, wird sofort und ohne Warnung weitergeworfen (z. B. dauerhafte Fehler wie "Zugriff verweigert" nicht wiederholen). `-StopOnError` setzt waehrend des ScriptBlocks `$ErrorActionPreference = 'Stop'` (danach wiederhergestellt), damit auch nicht-terminierende Cmdlet-Fehler (z. B. `Remove-Item` ohne `-ErrorAction Stop`) einen neuen Versuch ausloesen. Dokumentiert die bisherigen Fallstricke in der Hilfe: nur terminierende Fehler werden wiederholt, ohne `-ShouldRetry` jeder Fehler; `MaxAttempts` unter 1 ergibt genau einen Versuch, `DelaySeconds` darf nicht negativ sein. Weiterhin ungenutzt innerhalb von PSToolbox; als Baustein fuer Aufrufer (z. B. GFPC) gedacht. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.7.1] - 2026-10-18
 
 ### Geaenderte Funktionen
