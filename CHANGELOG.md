@@ -11,6 +11,22 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.9.0] - 2026-10-18
+
+### Neue Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Import-PSToolboxDataFile` | PSToolbox.Common (1.6.0) | Liest eine `.psd1`-Datendatei wie `Import-PowerShellDataFile` (genau eine Hashtable mit Konstanten, verschachtelten Hashtables und Arrays; Variablen, Cmdlet-Aufrufe, Verkettungen, Platzhalter in Texten und Skriptbloecke werden abgelehnt, es wird nichts ausgefuehrt und kein ScriptBlock erzeugt), aber mit **expliziter Kodierung**: `Import-PowerShellDataFile` hat keinen Encoding-Parameter, und Windows PowerShell 5.1 liest eine UTF-8-Datei ohne BOM als ANSI (Umlaute in Pfaden werden verfaelscht, PowerShell 7 liest korrekt). Die neue Funktion liest in beiden Editionen gleich: BOM (UTF-8/16/32) bestimmt die Kodierung, ohne BOM streng UTF-8 (oder `-Encoding`), eine nicht als UTF-8 gueltige Altdatei wird mit Warnung als ANSI gelesen. Ergebnis ist eine normale Hashtable (case-insensitive Schluessel); Fehler nennen den Dateinamen, Syntaxfehler die Zeile. Auf Gleichwertigkeit mit `Import-PowerShellDataFile` getestet (Zahlen, `1GB`-Literale, Here-Strings, Kommentare, Verschachtelung). **Bewusste Abweichung:** Skriptblock-Literale (`{ 1 }`) lehnt die neue Funktion ab, die Standardfunktion laesst sie als Wert durch. |
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-PSToolboxConfig` | PSToolbox.Common (1.6.0) | Liest die `.psd1`-Basisdatei jetzt ueber `Import-PSToolboxDataFile`: UTF-8 ohne BOM mit Umlauten wird unter Windows PowerShell 5.1 korrekt gelesen (vorher musste die Datei UTF-8 mit BOM sein). Eine nicht als UTF-8 gueltige Datei (ANSI) wird mit Warnung gelesen. Ein Skriptblock in der Basisdatei wird jetzt abgelehnt. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.8.1] - 2026-10-18
 
 ### Geaenderte Funktionen

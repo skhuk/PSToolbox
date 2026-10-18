@@ -19,7 +19,8 @@ Get-Help Merge-Hashtable -Full
 | `Merge-HashtableDeep` | Zwei Hashtables rekursiv zusammenfuehren (Override gewinnt je Key, auch bei `$null`) |
 | `Copy-HashtableDeep` | Rekursive (tiefe) Kopie einer Hashtable |
 | `ConvertTo-HashtableFromPSCustomObject` | Rekursive PSCustomObject -> Hashtable Konvertierung (fuer PS 5.1 ohne `-AsHashtable`) |
-| `Get-PSToolboxConfig` | Laedt eine `.psd1`-Config und ueberschreibt sie optional per JSON-Secrets-Datei (rekursiver Merge) |
+| `Import-PSToolboxDataFile` | Liest eine `.psd1`-Datendatei (nur Konstanten, Hashtables, Arrays; kein Code) mit expliziter Kodierung: UTF-8 mit oder ohne BOM in 5.1 und 7 gleich, ANSI-Altdateien mit Warnung. Ersatz fuer `Import-PowerShellDataFile`, das unter 5.1 UTF-8 ohne BOM als ANSI liest |
+| `Get-PSToolboxConfig` | Laedt eine `.psd1`-Config (ueber `Import-PSToolboxDataFile`) und ueberschreibt sie optional per JSON-Secrets-Datei (rekursiver Merge) |
 | `Test-PSToolboxFileSigned` | Prueft rein textuell (kein Gueltigkeits-Check), ob eine Datei einen Authenticode-Signaturblock enthaelt |
 | `Resolve-ValueOrDefault` | Generisches Coalesce-Pattern: Wert oder Fallback (auch als ScriptBlock) |
 | `Get-DirectorySize` | Rekursive Gesamtgroesse eines Verzeichnisses in Bytes |

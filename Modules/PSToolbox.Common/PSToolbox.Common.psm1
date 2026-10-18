@@ -237,6 +237,155 @@ function ConvertTo-PSToolboxHashtableValue {
     return $Value
 }
 
+function ConvertFrom-PSToolboxTextBytes {
+    # Intern (nicht exportiert): dekodiert Dateibytes zu Text. Ein BOM (UTF-8, UTF-16 LE/BE,
+    # UTF-32 LE) bestimmt die Kodierung. Ohne BOM gilt die uebergebene Kodierung, sonst
+    # streng UTF-8; sind die Bytes kein gueltiges UTF-8 (Altdatei in ANSI), wird mit Warnung
+    # als ANSI-Codepage des Systems gelesen (so las Windows PowerShell 5.1 BOM-lose Dateien).
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [byte[]]$Bytes,
+
+        [System.Text.Encoding]$Encoding,
+
+        [string]$Path = ''
+    )
+
+    $n = $Bytes.Length
+    if ($n -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        return [System.Text.Encoding]::UTF8.GetString($Bytes, 3, $n - 3)
+    }
+    if ($n -ge 4 -and $Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xFE -and $Bytes[2] -eq 0x00 -and $Bytes[3] -eq 0x00) {
+        return [System.Text.Encoding]::UTF32.GetString($Bytes, 4, $n - 4)
+    }
+    if ($n -ge 2 -and $Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xFE) {
+        return [System.Text.Encoding]::Unicode.GetString($Bytes, 2, $n - 2)
+    }
+    if ($n -ge 2 -and $Bytes[0] -eq 0xFE -and $Bytes[1] -eq 0xFF) {
+        return [System.Text.Encoding]::BigEndianUnicode.GetString($Bytes, 2, $n - 2)
+    }
+
+    if ($null -ne $Encoding) {
+        return $Encoding.GetString($Bytes)
+    }
+
+    try {
+        return (New-Object System.Text.UTF8Encoding($false, $true)).GetString($Bytes)
+    } catch [System.Text.DecoderFallbackException] {
+        $ansi = [System.Text.Encoding]::GetEncoding([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.ANSICodePage)
+        Write-Warning "Datei '$Path' ist kein gueltiges UTF-8 und wird als ANSI ($($ansi.WebName)) gelesen. Bitte als UTF-8 speichern."
+        return $ansi.GetString($Bytes)
+    }
+}
+
+function Test-PSToolboxDataValue {
+    # Intern (nicht exportiert): $true, wenn der Wert (rekursiv) ein Skriptblock ist oder enthaelt.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowNull()]$Value)
+
+    if ($Value -is [scriptblock]) { return $true }
+    if ($Value -is [System.Collections.IDictionary]) {
+        foreach ($v in $Value.Values) { if (Test-PSToolboxDataValue -Value $v) { return $true } }
+    } elseif ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        foreach ($v in $Value) { if (Test-PSToolboxDataValue -Value $v) { return $true } }
+    }
+    return $false
+}
+
+function Import-PSToolboxDataFile {
+    <#
+    .SYNOPSIS
+        Liest eine .psd1-Datendatei mit expliziter Kodierung (kein Code wird ausgefuehrt).
+
+    .DESCRIPTION
+        Wie Import-PowerShellDataFile: die Datei darf genau eine Hashtable (@{ ... }) mit
+        Konstanten (Zahlen, Texte, $true/$false/$null), verschachtelten Hashtables und
+        Arrays enthalten; Variablen, Cmdlet-Aufrufe, Verkettungen, Platzhalter in Texten
+        und Skriptbloecke werden abgelehnt. Die Datei wird dazu nur geparst (AST) und die
+        Konstanten ausgewertet, nie ausgefuehrt, und es wird kein ScriptBlock erzeugt.
+
+        Unterschied zu Import-PowerShellDataFile: die Kodierung. Import-PowerShellDataFile
+        hat keinen Encoding-Parameter, und Windows PowerShell 5.1 liest eine UTF-8-Datei
+        OHNE BOM als ANSI (Umlaute werden verfaelscht; PowerShell 7 liest UTF-8). Diese
+        Funktion liest in beiden Editionen gleich:
+        - BOM (UTF-8, UTF-16, UTF-32 LE) bestimmt die Kodierung.
+        - Ohne BOM streng UTF-8 (oder die mit -Encoding angegebene Kodierung).
+        - Ist die Datei kein gueltiges UTF-8 (Altdatei in ANSI), wird sie mit Warnung als
+          ANSI-Codepage des Systems gelesen, statt zu scheitern.
+
+        Das Ergebnis ist eine normale Hashtable (case-insensitive Schluessel), wie bei
+        Import-PowerShellDataFile. Fehler nennen den Dateinamen (Syntaxfehler mit Zeile).
+
+    .PARAMETER Path
+        Pfad zur .psd1-Datei (wird woertlich genommen, [ ] sind erlaubt).
+
+    .PARAMETER Encoding
+        Optional: Kodierung fuer Dateien ohne BOM. Ohne Angabe: streng UTF-8 mit
+        ANSI-Rueckfall (siehe oben).
+
+    .EXAMPLE
+        $cfg = Import-PSToolboxDataFile -Path .\base.config.psd1
+
+    .OUTPUTS
+        System.Collections.Hashtable
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [System.Text.Encoding]$Encoding
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Datendatei nicht gefunden: '$Path'"
+    }
+
+    $text = ConvertFrom-PSToolboxTextBytes -Bytes ([System.IO.File]::ReadAllBytes($Path)) -Encoding $Encoding -Path $Path
+
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$tokens, [ref]$errors)
+    if (@($errors).Count -gt 0) {
+        $e = @($errors)[0]
+        throw "Datendatei '$Path' enthaelt einen Syntaxfehler (Zeile $($e.Extent.StartLineNumber)): $($e.Message)"
+    }
+
+    $statements = @(if ($ast.EndBlock) { $ast.EndBlock.Statements })
+    if ($statements.Count -eq 0) {
+        throw "Datendatei '$Path' enthaelt keine Hashtable (@{ ... })."
+    }
+
+    $expression = $null
+    if ($statements.Count -eq 1 -and $statements[0] -is [System.Management.Automation.Language.PipelineAst]) {
+        $elements = @($statements[0].PipelineElements)
+        if ($elements.Count -eq 1 -and $elements[0] -is [System.Management.Automation.Language.CommandExpressionAst]) {
+            $expression = $elements[0].Expression
+        }
+    }
+    if ($expression -isnot [System.Management.Automation.Language.HashtableAst]) {
+        throw "Datendatei '$Path' muss genau eine Hashtable (@{ ... }) enthalten und sonst nichts."
+    }
+
+    try {
+        $value = $expression.SafeGetValue()
+    } catch {
+        $reason = ($_.Exception.GetBaseException().Message -split "`n")[0].Trim()
+        throw "Datendatei '$Path' enthaelt Code oder dynamische Ausdruecke (Variablen, Cmdlet-Aufrufe, Verkettungen, Platzhalter in Texten); erlaubt sind nur Konstanten, Hashtables und Arrays. $reason"
+    }
+
+    if (Test-PSToolboxDataValue -Value $value) {
+        throw "Datendatei '$Path' enthaelt einen Skriptblock; erlaubt sind nur Konstanten, Hashtables und Arrays."
+    }
+
+    return $value
+}
+
 function Get-PSToolboxConfig {
     <#
     .SYNOPSIS
@@ -259,10 +408,10 @@ function Get-PSToolboxConfig {
         Die JSON-Secrets-Datei wird immer als UTF-8 gelesen (mit oder ohne
         BOM, in Windows PowerShell 5.1 und 7 gleich). Ohne diese Festlegung
         liest 5.1 UTF-8 ohne BOM als ANSI und verfaelscht Umlaute und
-        Sonderzeichen. Die .psd1-Basisdatei liest Import-PowerShellDataFile
-        selbst (ohne Encoding-Parameter): enthaelt sie Nicht-ASCII-Zeichen,
-        muss sie unter 5.1 mit UTF-8-BOM gespeichert sein (siehe
-        Tools/Convert-ProjectEncoding.ps1).
+        Sonderzeichen. Die .psd1-Basisdatei liest Import-PSToolboxDataFile:
+        ebenfalls UTF-8 mit oder ohne BOM, in beiden Editionen gleich (nur
+        Konstanten, Hashtables und Arrays, kein Code). Eine nicht als UTF-8
+        gueltige Altdatei (ANSI) wird mit Warnung als ANSI gelesen.
 
     .PARAMETER Path
         Pfad zur .psd1-Basis-Konfiguration.
@@ -295,7 +444,7 @@ function Get-PSToolboxConfig {
         throw "Konfigurationsdatei nicht gefunden: '$Path'"
     }
 
-    $config = Import-PowerShellDataFile -LiteralPath $Path
+    $config = Import-PSToolboxDataFile -Path $Path
 
     if (-not [string]::IsNullOrWhiteSpace($SecretsPath) -and (Test-Path -LiteralPath $SecretsPath)) {
         $json      = Get-Content -LiteralPath $SecretsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -842,6 +991,7 @@ Export-ModuleMember -Function `
     Merge-HashtableDeep, `
     Copy-HashtableDeep, `
     ConvertTo-HashtableFromPSCustomObject, `
+    Import-PSToolboxDataFile, `
     Get-PSToolboxConfig, `
     Test-PSToolboxFileSigned, `
     Resolve-ValueOrDefault, `
