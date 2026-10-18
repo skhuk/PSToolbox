@@ -1,5 +1,5 @@
 @{
-    ModuleVersion     = '1.5.1'
+    ModuleVersion     = '1.6.0'
     GUID              = '8a282d78-f41f-4c78-b865-09ea998c699a'
     RootModule        = 'PSToolbox.Common.psm1'
     PowerShellVersion = '5.1'
@@ -9,6 +9,7 @@
         'Merge-HashtableDeep',
         'Copy-HashtableDeep',
         'ConvertTo-HashtableFromPSCustomObject',
+        'Import-PSToolboxDataFile',
         'Get-PSToolboxConfig',
         'Test-PSToolboxFileSigned',
         'Resolve-ValueOrDefault',
