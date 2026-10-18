@@ -487,6 +487,8 @@ function Test-PSToolboxFileSigned {
     .OUTPUTS
         [bool]
     #>
+    [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
@@ -794,6 +796,12 @@ function ConvertTo-SafeFileName {
     .PARAMETER Replacement
         Ersatzzeichen fuer ungueltige Zeichen (Standard '_').
 
+    .PARAMETER AvoidReservedNames
+        Stellt reservierten Windows-Geraetenamen (CON, PRN, AUX, NUL, COM1-9,
+        LPT1-9, auch mit Erweiterung wie "aux.txt") einen Unterstrich voran,
+        weil sich solche Dateien nicht normal anlegen lassen. Ohne den
+        Schalter bleibt das Verhalten unveraendert.
+
     .EXAMPLE
         ConvertTo-SafeFileName -Name 'Bericht: Q1/2026?'
         # 'Bericht_ Q1_2026_'
@@ -807,13 +815,18 @@ function ConvertTo-SafeFileName {
         [Parameter(Mandatory)]
         [string]$Name,
 
-        [string]$Replacement = '_'
+        [string]$Replacement = '_',
+
+        [switch]$AvoidReservedNames
     )
 
     $invalidChars = [System.IO.Path]::GetInvalidFileNameChars() -join ''
     $pattern      = "[{0}]" -f [Regex]::Escape($invalidChars)
-    $sanitized    = [Regex]::Replace($Name, $pattern, $Replacement)
-    return $sanitized.Trim(' ', '.')
+    $sanitized    = [Regex]::Replace($Name, $pattern, $Replacement).Trim(' ', '.')
+    if ($AvoidReservedNames -and $sanitized -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$') {
+        $sanitized = '_' + $sanitized
+    }
+    return $sanitized
 }
 
 function Test-PathWritable {
@@ -872,7 +885,8 @@ function Join-BasePath {
 
         Ein ChildPath, der mit einem Laufwerksbuchstaben ("C:\...") oder
         einem eigenen UNC-Pfad ("\\server\...") beginnt, gilt als
-        vollstaendig und wird unveraendert zurueckgegeben -- BasePath wird
+        vollstaendig und wird unveraendert zurueckgegeben (auch mit
+        Schraegstrich: "C:/..." und "//server/...") -- BasePath wird
         in dem Fall komplett ignoriert. Alle anderen ChildPath-Werte
         (auch ein einzelner fuehrender Backslash wie "\Tools\...", der
         .NET-seitig laut IsPathRooted() bereits als "rooted" gilt, aber
@@ -909,7 +923,7 @@ function Join-BasePath {
         [string]$ChildPath
     )
 
-    if ($ChildPath -match '^[A-Za-z]:\\|^\\\\') {
+    if ($ChildPath -match '^[A-Za-z]:[\\/]|^(\\\\|//)') {
         return $ChildPath
     }
 
