@@ -269,9 +269,16 @@ function Expand-SqlPlaceholders {
     .DESCRIPTION
         Nimmt eine hashtable Name->Wert (z.B. Ergebnisse mehrerer
         ExecuteScalar()-Aufrufe) und ersetzt jedes `:Name` im Template
-        durch das per Format-SqlLiteral formatierte Literal. Ersetzt die
-        laengsten Namen zuerst, damit z.B. `:MaxNr` nicht faelschlich den
-        Anfang von `:MaxNrAlt` trifft.
+        durch das per Format-SqlLiteral formatierte Literal. Bei mehreren
+        passenden Namen gewinnt der laengste, damit z.B. `:MaxNr` nicht
+        faelschlich den Anfang von `:MaxNrAlt` trifft.
+
+        Das Template wird in EINEM Durchlauf ersetzt: eingesetzte Werte
+        werden nie erneut nach Platzhaltern durchsucht (ein Wert wie
+        'x:Name' bleibt wortwoertlich erhalten). Namen werden unter
+        Beruecksichtigung der Gross-/Kleinschreibung gesucht, ein `:Name`
+        wird auch dann ersetzt, wenn er Teil eines laengeren Bezeichners ist
+        oder in einem String-Literal des Templates steht.
     .PARAMETER Template
         Der SQL-Textbaustein mit `:Name`-Platzhaltern (z.B. eine
         WHERE-Clause).
@@ -281,8 +288,12 @@ function Expand-SqlPlaceholders {
         $resolved = @{ MaxNr = 4200 }
         Expand-SqlPlaceholders -Template "Nr >= :MaxNr" -ResolvedValues $resolved
         # "Nr >= 4200"
+
+    .OUTPUTS
+        System.String
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Template,
@@ -291,13 +302,24 @@ function Expand-SqlPlaceholders {
         [hashtable]$ResolvedValues
     )
 
-    $result = $Template
-    $sortedNames = $ResolvedValues.Keys | Sort-Object -Property Length -Descending
-
-    foreach ($name in $sortedNames) {
-        $literal = Format-SqlLiteral -Value $ResolvedValues[$name]
-        $result = $result.Replace(":$name", $literal)
+    $literals = @{}
+    foreach ($name in $ResolvedValues.Keys) {
+        if ([string]::IsNullOrEmpty($name)) { continue }
+        $literals[[string]$name] = Format-SqlLiteral -Value $ResolvedValues[$name]
     }
+
+    if ($literals.Count -eq 0) { return $Template }
+
+    # Ein Regex-Durchlauf mit Alternation, laengste Namen zuerst: ersetzte
+    # Werte werden nicht erneut durchsucht.
+    $alternation = ($literals.Keys | Sort-Object -Property Length -Descending |
+                    ForEach-Object { [regex]::Escape(":$_") }) -join '|'
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator]({
+        param($match)
+        $literals[$match.Value.Substring(1)]
+    }.GetNewClosure())
+
+    $result = [regex]::Replace($Template, $alternation, $evaluator)
 
     return $result
 }

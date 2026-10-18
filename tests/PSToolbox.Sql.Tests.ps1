@@ -81,6 +81,35 @@ Describe 'Expand-SqlPlaceholders' {
         Expand-SqlPlaceholders -Template 'Name = :Name' -ResolvedValues @{ Name = "O'Brien" } |
             Should -Be "Name = 'O''Brien'"
     }
+
+    It 'durchsucht eingesetzte Werte nicht erneut nach Platzhaltern' {
+        $result = Expand-SqlPlaceholders -Template 'SELECT :a, :b' -ResolvedValues @{ a = 'x:b'; b = 'BOOM' }
+        $result | Should -Be "SELECT 'x:b', 'BOOM'"
+    }
+
+    It 'verkettet Werte nicht, die ihrerseits Platzhalter enthalten (zyklisch, daher reihenfolgeunabhaengig)' {
+        # a -> :b, b -> :c, c -> :a: bei sequentiellem Ersetzen entsteht in JEDER
+        # Aufzaehlungsreihenfolge mindestens eine Kette
+        $r = Expand-SqlPlaceholders -Template ':a :b :c' -ResolvedValues @{ a = ':b'; b = ':c'; c = ':a' }
+        $r | Should -Be "':b' ':c' ':a'"
+    }
+
+    It 'ersetzt einen mehrfach vorkommenden Platzhalter jedes Mal' {
+        Expand-SqlPlaceholders -Template ':n + :n' -ResolvedValues @{ n = 3 } | Should -Be '3 + 3'
+    }
+
+    It 'laesst unbekannte Platzhalter und Namen mit anderer Gross-/Kleinschreibung unveraendert' {
+        Expand-SqlPlaceholders -Template ':a :A :x' -ResolvedValues @{ a = 1 } | Should -Be '1 :A :x'
+    }
+
+    It 'behandelt Sonderzeichen in Namen und Werten wortwoertlich (kein Regex, kein $-Ersatz)' {
+        $r = Expand-SqlPlaceholders -Template 'v = :a.b' -ResolvedValues @{ 'a.b' = 'x$1\y' }
+        $r | Should -BeExactly "v = 'x`$1\y'"
+    }
+
+    It 'gibt das Template unveraendert zurueck, wenn keine Werte uebergeben werden' {
+        Expand-SqlPlaceholders -Template 'Nr >= :MaxNr' -ResolvedValues @{} | Should -Be 'Nr >= :MaxNr'
+    }
 }
 
 Describe 'New-SqlServerConnectionString' {

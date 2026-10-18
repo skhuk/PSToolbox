@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.5] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Expand-SqlPlaceholders` | PSToolbox.Sql (1.5.2) | Fehlerbehebung: Die Platzhalter wurden nacheinander ersetzt; enthielt ein eingesetzter Wert selbst einen `:Name`-Platzhalter eines spaeter bearbeiteten Namens (z. B. `a = 'x:b'`), wurde dieser Teil des Werts erneut ersetzt. Ob das passierte, haengte von der Aufzaehlungsreihenfolge der Hashtable ab. Jetzt ein einziger Regex-Durchlauf: eingesetzte Werte werden nie erneut durchsucht. Unveraendert bleiben: laengster Name gewinnt, Gross-/Kleinschreibung zaehlt, ein `:Name` wird auch als Teil eines laengeren Bezeichners oder in einem String-Literal des Templates ersetzt. Leere Namen werden ignoriert (vorher ersetzte ein leerer Name jeden Doppelpunkt). `[OutputType([string])]` ergaenzt. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.4] - 2026-10-18
 
 ### Geaenderte Funktionen
