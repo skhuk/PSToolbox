@@ -496,10 +496,10 @@ function Invoke-LogRotation {
     )
 
     if ($RetentionDays -le 0) { return }
-    if (-not (Test-Path $LogDirectory)) { return }
+    if (-not (Test-Path -LiteralPath $LogDirectory)) { return }
 
     $cutoff = (Get-Date).AddDays(-$RetentionDays)
-    Get-ChildItem -Path $LogDirectory -Filter $Pattern -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $LogDirectory -Filter $Pattern -File -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt $cutoff } |
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
@@ -950,29 +950,29 @@ function Invoke-LogFileRotation {
         [int]$MaxGenerations = 9
     )
 
-    if (-not (Test-Path -Path $LogFilePath)) {
+    if (-not (Test-Path -LiteralPath $LogFilePath)) {
         return
     }
 
-    $sizeKB = (Get-Item -Path $LogFilePath).Length / 1KB
+    $sizeKB = (Get-Item -LiteralPath $LogFilePath).Length / 1KB
     if ($sizeKB -le $MaxSizeKB) {
         return
     }
 
     $oldestGeneration = "$LogFilePath.$MaxGenerations"
-    if (Test-Path -Path $oldestGeneration) {
-        Remove-Item -Path $oldestGeneration -Force
+    if (Test-Path -LiteralPath $oldestGeneration) {
+        Remove-Item -LiteralPath $oldestGeneration -Force
     }
 
     for ($i = $MaxGenerations - 1; $i -ge 1; $i--) {
         $currentGeneration = "$LogFilePath.$i"
         $nextGeneration = "$LogFilePath.$($i + 1)"
-        if (Test-Path -Path $currentGeneration) {
-            Move-Item -Path $currentGeneration -Destination $nextGeneration -Force
+        if (Test-Path -LiteralPath $currentGeneration) {
+            Move-Item -LiteralPath $currentGeneration -Destination $nextGeneration -Force
         }
     }
 
-    Move-Item -Path $LogFilePath -Destination "$LogFilePath.1" -Force
+    Move-Item -LiteralPath $LogFilePath -Destination "$LogFilePath.1" -Force
 }
 
 function Get-ScheduledTaskExitCode {

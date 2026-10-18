@@ -179,6 +179,11 @@ function ConvertTo-HashtableFromPSCustomObject {
         damit das Ergebnis z. B. mit Merge-HashtableDeep weiterverarbeitet
         werden kann.
 
+        Auch Arrays (ConvertFrom-Json liefert object[]) werden elementweise
+        konvertiert: PSCustomObject-Elemente werden zu Hashtables, verschachtelte
+        Arrays rekursiv; Skalare bleiben unveraendert. Das Ergebnis bleibt ein
+        Array, auch bei nur einem Element oder leer.
+
     .PARAMETER InputObject
         Das zu konvertierende PSCustomObject (bzw. verschachtelte PSCustomObjects).
 
@@ -199,14 +204,37 @@ function ConvertTo-HashtableFromPSCustomObject {
     $result = @{}
 
     foreach ($property in $InputObject.PSObject.Properties) {
-        if ($property.Value -is [System.Management.Automation.PSCustomObject]) {
-            $result[$property.Name] = ConvertTo-HashtableFromPSCustomObject -InputObject $property.Value
-        } else {
-            $result[$property.Name] = $property.Value
-        }
+        $result[$property.Name] = ConvertTo-PSToolboxHashtableValue -Value $property.Value
     }
 
     return $result
+}
+
+function ConvertTo-PSToolboxHashtableValue {
+    # Intern (nicht exportiert): wandelt einen einzelnen Wert fuer
+    # ConvertTo-HashtableFromPSCustomObject um - PSCustomObject -> Hashtable,
+    # object[] -> object[] mit umgewandelten Elementen, sonst unveraendert.
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [AllowNull()]
+        $Value
+    )
+
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        return ConvertTo-HashtableFromPSCustomObject -InputObject $Value
+    }
+
+    if ($Value -is [object[]]) {
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($item in $Value) {
+            $items.Add((ConvertTo-PSToolboxHashtableValue -Value $item))
+        }
+        # Komma-Operator: das Array nicht beim Zurueckgeben entrollen
+        return , $items.ToArray()
+    }
+
+    return $Value
 }
 
 function Get-PSToolboxConfig {
@@ -307,9 +335,9 @@ function Test-PSToolboxFileSigned {
         [string]$Path
     )
 
-    if (-not (Test-Path -Path $Path)) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
 
-    $content = Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue
+    $content = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrEmpty($content)) { return $false }
 
     return $content.Contains("# SIG # Begin signature block")
@@ -495,17 +523,51 @@ function Invoke-WithRetry {
         (linearer Backoff). Wirft die letzte Exception weiter, wenn auch der
         letzte Versuch fehlschlaegt.
 
+        WICHTIG -- zwei Fallstricke (Standardverhalten, aus Gruenden der
+        Rueckwaertskompatibilitaet unveraendert):
+        1. Wiederholt werden nur TERMINIERENDE Fehler (Exceptions). Cmdlets
+           wie Remove-Item oder Copy-Item melden Fehler standardmaessig
+           NICHT-terminierend (ErrorAction Continue) und loesen daher keinen
+           neuen Versuch aus. Abhilfe: im ScriptBlock -ErrorAction Stop
+           angeben oder den Schalter -StopOnError verwenden.
+        2. Ohne -ShouldRetry wird JEDER Fehler wiederholt, auch dauerhafte
+           wie "Zugriff verweigert" oder "Pfad nicht gefunden". Mit
+           -ShouldRetry laesst sich auf voruebergehende Fehler einschraenken.
+
     .PARAMETER ScriptBlock
         Der auszufuehrende Code. Sein Rueckgabewert wird bei Erfolg durchgereicht.
 
     .PARAMETER MaxAttempts
-        Maximale Anzahl an Versuchen (Standard 3).
+        Maximale Anzahl an Versuchen (Standard 3). Werte unter 1 fuehren zu
+        genau einem Versuch (ohne Wiederholung).
 
     .PARAMETER DelaySeconds
-        Basis-Wartezeit in Sekunden zwischen Versuchen (Standard 2, linear steigend).
+        Basis-Wartezeit in Sekunden zwischen Versuchen (Standard 2, linear
+        steigend). Darf nicht negativ sein.
+
+    .PARAMETER ShouldRetry
+        Optional: ScriptBlock, der entscheidet, ob ein Fehler wiederholt wird.
+        Der ErrorRecord steht als $_ zur Verfuegung (z. B.
+        $_.Exception -is [System.IO.IOException]). Gibt der Block einen Wert
+        zurueck, der als $true gilt, wird wiederholt; sonst (auch ohne
+        Ausgabe) wird der Fehler sofort ohne weitere Versuche und ohne
+        Warnung weitergeworfen. Ohne Angabe werden alle Fehler wiederholt.
+
+    .PARAMETER StopOnError
+        Setzt fuer die Ausfuehrung des ScriptBlocks $ErrorActionPreference auf
+        'Stop' (danach wird der urspruengliche Wert wiederhergestellt), damit
+        auch nicht-terminierende Fehler von Cmdlets einen neuen Versuch
+        ausloesen. Ein explizites -ErrorAction im ScriptBlock hat weiter
+        Vorrang.
 
     .EXAMPLE
         Invoke-WithRetry -ScriptBlock { Invoke-WebRequest -Uri $url } -MaxAttempts 5 -DelaySeconds 3
+
+    .EXAMPLE
+        # Nicht-terminierende Cmdlet-Fehler mitwiederholen, nur bei E/A-Fehlern
+        Invoke-WithRetry -StopOnError -ShouldRetry { $_.Exception -is [System.IO.IOException] } -ScriptBlock {
+            Remove-Item -LiteralPath $folder -Recurse -Force
+        }
 
     .OUTPUTS
         System.Object (Rueckgabewert des ScriptBlocks)
@@ -517,16 +579,36 @@ function Invoke-WithRetry {
 
         [int]$MaxAttempts = 3,
 
-        [int]$DelaySeconds = 2
+        [int]$DelaySeconds = 2,
+
+        [scriptblock]$ShouldRetry,
+
+        [switch]$StopOnError
     )
 
     $attempt = 0
     while ($true) {
         $attempt++
         try {
+            if ($StopOnError) {
+                # Global: ein ScriptBlock aus dem Aufrufer-Kontext sieht nur die
+                # globale Einstellung, nicht die Variable dieser Funktion.
+                $previousPreference = $global:ErrorActionPreference
+                $global:ErrorActionPreference = 'Stop'
+                try {
+                    return & $ScriptBlock
+                } finally {
+                    $global:ErrorActionPreference = $previousPreference
+                }
+            }
             return & $ScriptBlock
         } catch {
-            if ($attempt -ge $MaxAttempts) {
+            $errorRecord = $_
+            $retryable = $true
+            if ($null -ne $ShouldRetry) {
+                $retryable = [bool](ForEach-Object -InputObject $errorRecord -Process $ShouldRetry)
+            }
+            if ((-not $retryable) -or ($attempt -ge $MaxAttempts)) {
                 throw
             }
             Write-Warning "Versuch $attempt/$MaxAttempts fehlgeschlagen: $_. Erneuter Versuch in $($DelaySeconds * $attempt)s."
@@ -598,14 +680,14 @@ function Test-PathWritable {
         [string]$Path
     )
 
-    if (-not (Test-Path $Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) {
         return $false
     }
 
     $probeFile = Join-Path $Path (".pstoolbox_writetest_$([Guid]::NewGuid().ToString('N')).tmp")
     try {
         [System.IO.File]::WriteAllText($probeFile, 'probe')
-        Remove-Item -Path $probeFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
         return $true
     } catch {
         return $false
@@ -725,7 +807,7 @@ function Test-FileMinLineCount {
         throw "MinLines muss positiv sein."
     }
 
-    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Datei nicht gefunden: $Path"
     }
 

@@ -11,6 +11,73 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.8.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Invoke-WithRetry` | PSToolbox.Common (1.5.0) | Zwei neue optionale Parameter, **Standardverhalten unveraendert** (rueckwaertskompatibel, daher Minor): `-ShouldRetry <ScriptBlock>` entscheidet anhand des ErrorRecords (`$_`), ob ein Fehler wiederholt wird; liefert der Block nicht `$true`, wird sofort und ohne Warnung weitergeworfen (z. B. dauerhafte Fehler wie "Zugriff verweigert" nicht wiederholen). `-StopOnError` setzt waehrend des ScriptBlocks `$ErrorActionPreference = 'Stop'` (danach wiederhergestellt), damit auch nicht-terminierende Cmdlet-Fehler (z. B. `Remove-Item` ohne `-ErrorAction Stop`) einen neuen Versuch ausloesen. Dokumentiert die bisherigen Fallstricke in der Hilfe: nur terminierende Fehler werden wiederholt, ohne `-ShouldRetry` jeder Fehler; `MaxAttempts` unter 1 ergibt genau einen Versuch, `DelaySeconds` darf nicht negativ sein. Weiterhin ungenutzt innerhalb von PSToolbox; als Baustein fuer Aufrufer (z. B. GFPC) gedacht. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
+## [1.7.1] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Import-DelimitedFileToSqlTable` | PSToolbox.Sql (1.6.1) | **Nur Dokumentation, Verhalten unveraendert.** Der Default von `-Encoding` (`[System.Text.Encoding]::Default`) ist editionsabhaengig: Windows PowerShell 5.1 = System-ANSI-Codepage (Westeuropa: Windows-1252), PowerShell 7 = UTF-8. Dieselbe ANSI-Datei (z. B. DBISAM-Export) wird unter 7 mit Umlauten als `U+FFFD` gelesen. Der Default bleibt aus Gruenden der Rueckwaertskompatibilitaet bewusst unveraendert; **Empfehlung: `-Encoding` immer explizit angeben**, z. B. `[System.Text.Encoding]::GetEncoding(1252)` (ANSI, funktioniert in beiden Editionen) oder `[System.Text.Encoding]::UTF8`. Hilfe der Funktion (Abschnitt WICHTIG) und README von `PSToolbox.Sql` ergaenzt; zwei Tests (ANSI-Datei mit explizitem Windows-1252 in beiden Editionen; Default bleibt `Encoding.Default`). |
+
+---
+
+## [1.7.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Format-SqlLiteral`, `Expand-SqlPlaceholders` | PSToolbox.Sql (1.6.0) | Neue optionale Parameter, **Standardverhalten unveraendert** (rueckwaertskompatibel, daher Minor): `-UnicodeStrings` gibt Strings als `N'...'` aus. Ohne `N` gehen Zeichen ausserhalb der Datenbank-Codepage verloren (am echten SQL Server geprueft: kyrillisches Zeichen wird zu `?`). `-DateTimeFormat LanguageNeutral` gibt DateTime als `'yyyyMMdd HH:mm:ss.fff'` aus. Das bisherige Format `'yyyy-MM-dd HH:mm:ss'` wird bei `datetime`/`smalldatetime` je nach `SET LANGUAGE`/`DATEFORMAT` gelesen (am echten SQL Server geprueft: unter `SET LANGUAGE German` wird der 2. Januar zum 1. Februar) und hat keine Sekundenbruchteile; `datetime` rundet selbst auf 1/300 s. `Expand-SqlPlaceholders` reicht beide Parameter an `Format-SqlLiteral` durch. Neuer README-Abschnitt in `PSToolbox.Sql`. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
+## [1.6.7] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Test-PathWritable`, `Test-FileMinLineCount`, `Test-PSToolboxFileSigned` | PSToolbox.Common (1.4.4) | Fehlerbehebung: Pfade mit `[` `]` im Namen wurden als Wildcard-Muster gedeutet (z. B. lieferte `Test-PathWritable` fuer ein existierendes, beschreibbares Verzeichnis `ordner[1]` `$false`). Jetzt durchgaengig `-LiteralPath`. |
+| `Invoke-LogRotation`, `Invoke-LogFileRotation` | PSToolbox.Logging (1.2.2) | Fehlerbehebung: gleiche Ursache - Rotation und Aufraeumen funktionierten in Verzeichnissen mit `[ ]` im Namen nicht. Jetzt `-LiteralPath`. Das `-Filter`/`-Pattern` bleibt ein Wildcard-Muster fuer den Dateinamen. |
+
+### Sonstiges
+
+- **Tools/Convert-ProjectEncoding.ps1** und **Tools/Sign-Project.ps1**: Pfade mit `[ ]` werden jetzt ebenfalls korrekt behandelt (`-LiteralPath`). **Wichtig fuer PS 5.1:** Windows PowerShell 5.1 ignoriert `-Include` zusammen mit `-LiteralPath` (PowerShell 7 beachtet es); die Include-Muster werden deshalb in beiden Tools selbst per `-like` auf den Dateinamen angewendet. Verhalten fuer normale Pfade unveraendert. Keine `ModuleVersion` betroffen. `Sign-Project.ps1` hat keine automatischen Tests (braucht signtool.exe und Zertifikat); die Aenderung folgt dem getesteten Muster in `Convert-ProjectEncoding.ps1`.
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
+## [1.6.6] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `ConvertTo-HashtableFromPSCustomObject` | PSToolbox.Common (1.4.3) | Fehlerbehebung: Arrays wurden nicht rekursiv umgewandelt, Objekte in JSON-Arrays (z. B. `"Servers": [ { "Host": "a" } ]`) blieben `PSCustomObject`. Jetzt werden Arrays (`object[]`, wie von `ConvertFrom-Json` geliefert) elementweise konvertiert: `PSCustomObject` wird zu Hashtable, verschachtelte Arrays rekursiv, Skalare und `null` bleiben unveraendert, das Ergebnis bleibt ein Array (auch bei einem Element oder leer). Betrifft auch `Get-PSToolboxConfig` mit JSON-Secrets. Verhaltensaenderung: Elemente in Arrays haben jetzt den Typ `Hashtable` statt `PSCustomObject` (Zugriff `.Name` funktioniert bei beiden gleich, Unterschiede z. B. bei `$_.PSObject.Properties` oder `Get-Member`). Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
+## [1.6.5] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Expand-SqlPlaceholders` | PSToolbox.Sql (1.5.2) | Fehlerbehebung: Die Platzhalter wurden nacheinander ersetzt; enthielt ein eingesetzter Wert selbst einen `:Name`-Platzhalter eines spaeter bearbeiteten Namens (z. B. `a = 'x:b'`), wurde dieser Teil des Werts erneut ersetzt. Ob das passierte, haengte von der Aufzaehlungsreihenfolge der Hashtable ab. Jetzt ein einziger Regex-Durchlauf: eingesetzte Werte werden nie erneut durchsucht. Unveraendert bleiben: laengster Name gewinnt, Gross-/Kleinschreibung zaehlt, ein `:Name` wird auch als Teil eines laengeren Bezeichners oder in einem String-Literal des Templates ersetzt. Leere Namen werden ignoriert (vorher ersetzte ein leerer Name jeden Doppelpunkt). `[OutputType([string])]` ergaenzt. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.4] - 2026-10-18
 
 ### Geaenderte Funktionen

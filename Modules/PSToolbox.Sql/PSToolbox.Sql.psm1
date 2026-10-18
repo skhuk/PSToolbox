@@ -222,17 +222,49 @@ function Format-SqlLiteral {
         Ein simples [string]$Value wuerde bei DateTime (US-Format, keine
         Quotes) oder String (fehlende Quotes/Escaping) ungueltiges bzw.
         unsicheres SQL erzeugen -- diese Funktion vermeidet das.
+
+        Zwei optionale Schalter machen die Ausgabe robuster, ohne das
+        Standardverhalten zu aendern (Rueckwaertskompatibilitaet):
+        -UnicodeStrings und -DateTimeFormat LanguageNeutral.
     .PARAMETER Value
         Der zu formatierende Wert (z.B. Ergebnis von SqlCommand.ExecuteScalar()).
+    .PARAMETER UnicodeStrings
+        Strings als Unicode-Literal (N'...') ausgeben. Ohne diesen Schalter
+        entsteht ein varchar-Literal ('...'); Zeichen ausserhalb der
+        Datenbank-Codepage (z. B. Euro-Zeichen, kyrillische Buchstaben) gehen
+        dann beim Vergleich oder Einfuegen verloren, auch bei nvarchar-Spalten.
+        Wirkt nur auf Strings (und alles, was als String formatiert wird),
+        nicht auf Zahlen, Bool oder DateTime.
+    .PARAMETER DateTimeFormat
+        Format fuer DateTime-Werte:
+        - Default (Standard, unveraendert): 'yyyy-MM-dd HH:mm:ss'. Dieses
+          Format wird von SQL Server bei datetime/smalldatetime abhaengig von
+          SET LANGUAGE/DATEFORMAT gelesen (z. B. unter Deutsch als
+          Jahr-Tag-Monat) und ist ohne Sekundenbruchteile.
+        - LanguageNeutral: 'yyyyMMdd HH:mm:ss.fff'. Unabhaengig von Sprache
+          und DATEFORMAT eindeutig, inklusive Millisekunden (der Typ datetime
+          rundet selbst auf 1/300 Sekunde, z. B. .678 -> .677; datetime2
+          behaelt die Millisekunden).
     .EXAMPLE
         $sql = "WHERE Nr > " + (Format-SqlLiteral -Value $maxNr)
+    .EXAMPLE
+        Format-SqlLiteral -Value $ts -DateTimeFormat LanguageNeutral
+        # '20260102 03:04:05.000'
+    .EXAMPLE
+        Format-SqlLiteral -Value 'Strasse' -UnicodeStrings
+        # N'Strasse'
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [AllowNull()]
-        $Value
+        $Value,
+
+        [switch]$UnicodeStrings,
+
+        [ValidateSet('Default', 'LanguageNeutral')]
+        [string]$DateTimeFormat = 'Default'
     )
 
     if ($null -eq $Value) {
@@ -242,7 +274,8 @@ function Format-SqlLiteral {
     $invariant = [System.Globalization.CultureInfo]::InvariantCulture
 
     if ($Value -is [datetime]) {
-        return "'{0}'" -f $Value.ToString("yyyy-MM-dd HH:mm:ss", $invariant)
+        $dateFormat = if ($DateTimeFormat -eq 'LanguageNeutral') { 'yyyyMMdd HH:mm:ss.fff' } else { 'yyyy-MM-dd HH:mm:ss' }
+        return "'{0}'" -f $Value.ToString($dateFormat, $invariant)
     }
 
     if (($Value -is [int]) -or ($Value -is [long]) -or ($Value -is [int16]) -or ($Value -is [byte])) {
@@ -258,7 +291,8 @@ function Format-SqlLiteral {
     }
 
     $escaped = ([string]$Value).Replace("'", "''")
-    return "'$escaped'"
+    $prefix  = if ($UnicodeStrings) { 'N' } else { '' }
+    return "$prefix'$escaped'"
 }
 
 function Expand-SqlPlaceholders {
@@ -269,9 +303,20 @@ function Expand-SqlPlaceholders {
     .DESCRIPTION
         Nimmt eine hashtable Name->Wert (z.B. Ergebnisse mehrerer
         ExecuteScalar()-Aufrufe) und ersetzt jedes `:Name` im Template
-        durch das per Format-SqlLiteral formatierte Literal. Ersetzt die
-        laengsten Namen zuerst, damit z.B. `:MaxNr` nicht faelschlich den
-        Anfang von `:MaxNrAlt` trifft.
+        durch das per Format-SqlLiteral formatierte Literal. Bei mehreren
+        passenden Namen gewinnt der laengste, damit z.B. `:MaxNr` nicht
+        faelschlich den Anfang von `:MaxNrAlt` trifft.
+
+        Das Template wird in EINEM Durchlauf ersetzt: eingesetzte Werte
+        werden nie erneut nach Platzhaltern durchsucht (ein Wert wie
+        'x:Name' bleibt wortwoertlich erhalten). Namen werden unter
+        Beruecksichtigung der Gross-/Kleinschreibung gesucht, ein `:Name`
+        wird auch dann ersetzt, wenn er Teil eines laengeren Bezeichners ist
+        oder in einem String-Literal des Templates steht.
+    .PARAMETER UnicodeStrings
+        Wie bei Format-SqlLiteral: String-Werte als N'...' einsetzen.
+    .PARAMETER DateTimeFormat
+        Wie bei Format-SqlLiteral: Default (unveraendert) oder LanguageNeutral.
     .PARAMETER Template
         Der SQL-Textbaustein mit `:Name`-Platzhaltern (z.B. eine
         WHERE-Clause).
@@ -281,23 +326,44 @@ function Expand-SqlPlaceholders {
         $resolved = @{ MaxNr = 4200 }
         Expand-SqlPlaceholders -Template "Nr >= :MaxNr" -ResolvedValues $resolved
         # "Nr >= 4200"
+
+    .OUTPUTS
+        System.String
     #>
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Template,
 
         [Parameter(Mandatory = $true)]
-        [hashtable]$ResolvedValues
+        [hashtable]$ResolvedValues,
+
+        [switch]$UnicodeStrings,
+
+        [ValidateSet('Default', 'LanguageNeutral')]
+        [string]$DateTimeFormat = 'Default'
     )
 
-    $result = $Template
-    $sortedNames = $ResolvedValues.Keys | Sort-Object -Property Length -Descending
-
-    foreach ($name in $sortedNames) {
-        $literal = Format-SqlLiteral -Value $ResolvedValues[$name]
-        $result = $result.Replace(":$name", $literal)
+    $literals = @{}
+    foreach ($name in $ResolvedValues.Keys) {
+        if ([string]::IsNullOrEmpty($name)) { continue }
+        $literals[[string]$name] = Format-SqlLiteral -Value $ResolvedValues[$name] `
+            -UnicodeStrings:$UnicodeStrings -DateTimeFormat $DateTimeFormat
     }
+
+    if ($literals.Count -eq 0) { return $Template }
+
+    # Ein Regex-Durchlauf mit Alternation, laengste Namen zuerst: ersetzte
+    # Werte werden nicht erneut durchsucht.
+    $alternation = ($literals.Keys | Sort-Object -Property Length -Descending |
+                    ForEach-Object { [regex]::Escape(":$_") }) -join '|'
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator]({
+        param($match)
+        $literals[$match.Value.Substring(1)]
+    }.GetNewClosure())
+
+    $result = [regex]::Replace($Template, $alternation, $evaluator)
 
     return $result
 }
@@ -998,11 +1064,24 @@ function Import-DelimitedFileToSqlTable {
     .PARAMETER Delimiter
         Feldtrennzeichen (Default ";").
     .PARAMETER Encoding
-        Zeichenkodierung der Quelldatei (Default System.Text.Encoding.Default,
-        die System-ANSI-Codepage -- passend zu Tools, die "Encoding Default"
-        beim Schreiben verwenden, z.B. DBISAM-Exporte). Ohne explizite Angabe
-        wuerde TextFieldParser UTF-8 annehmen, was ANSI-kodierte Umlaute
-        (z.B. "oe"-Umlaut als 0xF6) falsch dekodiert.
+        Zeichenkodierung der Quelldatei (Default System.Text.Encoding.Default
+        -- siehe WICHTIG). Ohne explizite Angabe wuerde TextFieldParser UTF-8
+        annehmen, was ANSI-kodierte Umlaute (z.B. "oe"-Umlaut als 0xF6)
+        falsch dekodiert.
+
+        WICHTIG -- der Default ist editionsabhaengig:
+        - Windows PowerShell 5.1 (.NET Framework): Encoding.Default ist die
+          System-ANSI-Codepage (in Westeuropa Windows-1252). Das passt zu
+          Tools, die "Encoding Default" beim Schreiben verwenden, z.B.
+          DBISAM-Exporte.
+        - PowerShell 7 (.NET): Encoding.Default ist UTF-8. Dieselbe
+          ANSI-Datei wird dort falsch gelesen (Umlaute werden zu U+FFFD).
+        Der Default bleibt aus Gruenden der Rueckwaertskompatibilitaet
+        unveraendert. Wer in beiden Editionen dasselbe Ergebnis braucht,
+        gibt -Encoding IMMER explizit an:
+          -Encoding ([System.Text.Encoding]::GetEncoding(1252))  # ANSI/Windows-1252
+          -Encoding ([System.Text.Encoding]::UTF8)                # UTF-8
+        GetEncoding(1252) funktioniert in beiden Editionen.
     .PARAMETER BatchSize
         SqlBulkCopy-Batchgroesse (Default 5000).
     .PARAMETER CommitEveryBatches

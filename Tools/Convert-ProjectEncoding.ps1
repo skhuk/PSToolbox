@@ -152,17 +152,30 @@ function Get-TargetFile {
         throw "Pfad '$Path' wurde nicht gefunden (weder Datei noch Verzeichnis)."
     }
 
+    # -LiteralPath, damit [ ] im Pfad nicht als Wildcard gedeutet werden. In
+    # Windows PowerShell 5.1 wird -Include zusammen mit -LiteralPath aber
+    # IGNORIERT (PowerShell 7 beachtet es) -- daher werden die Include-Muster
+    # hier selbst per -like angewendet (wie -Include nur auf den Dateinamen,
+    # ohne Beruecksichtigung der Gross-/Kleinschreibung).
+    $listArgs = @{ LiteralPath = $Path; File = $true }
+    if ($Recursive) { $listArgs['Recurse'] = $true }
+    $files = @(Get-ChildItem @listArgs)
+
+    if ($Include) {
+        $files = @($files | Where-Object {
+            $name = $_.Name
+            @($Include | Where-Object { $name -like $_ }).Count -gt 0
+        })
+    }
+
     if ($Recursive) {
         # .git ueber den vollstaendigen Pfad ausschliessen (Trennzeichen
         # beider Welten beruecksichtigen, damit die Tests auch unter
         # Nicht-Windows-Runnern funktionieren wuerden).
-        return @(Get-ChildItem -Path $Path -Recurse -File -Include $Include |
-            Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' })
+        $files = @($files | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' })
     }
 
-    # Bekannte PS-5.1-Falle: -Include wirkt ohne -Recurse nur, wenn der
-    # Pfad ein Wildcard-Muster enthaelt -- daher explizit '<Pfad>\*'.
-    return @(Get-ChildItem -Path (Join-Path $Path '*') -File -Include $Include)
+    return $files
 }
 
 function Test-Utf8Content {

@@ -311,3 +311,48 @@ Describe 'Write-RunStart / Write-RunEnd' {
         Get-Content -Path $logFile.FullName -Raw | Should -Match 'State=TERMINATED'
     }
 }
+
+Describe 'Logging mit eckigen Klammern im Pfad' {
+    BeforeEach {
+        $script:brk = Join-Path $TestDrive ('lg[' + [Guid]::NewGuid().ToString('N').Substring(0, 6) + ']')
+    }
+
+    It 'Initialize-Logging und Write-Log schreiben in ein Verzeichnis mit [ ]' {
+        Initialize-Logging -LogDirectory $script:brk -RetentionDays 0 -LogFilePrefix 'BR'
+        Write-Log -Message 'klammer' -Level Info -InformationAction SilentlyContinue
+        $file = Get-ChildItem -LiteralPath $script:brk -Filter 'BR_*.log' | Select-Object -First 1
+        $file | Should -Not -BeNullOrEmpty
+        Get-Content -LiteralPath $file.FullName -Raw | Should -Match 'klammer'
+    }
+
+    It 'Write-LogEntry legt ein Verzeichnis mit [ ] an und schreibt hinein' {
+        $logPath = Join-Path $script:brk 'neu\entry.log'
+        Write-LogEntry -Message 'klammer2' -LogFilePath $logPath -NoConsole
+        Get-Content -LiteralPath $logPath -Raw | Should -Match 'klammer2'
+    }
+
+    It 'Invoke-LogRotation loescht alte Logs in einem Verzeichnis mit [ ]' {
+        New-Item -ItemType Directory -Path $script:brk -Force | Out-Null
+        $alt = Join-Path $script:brk 'Tool_alt.log'
+        $neu = Join-Path $script:brk 'Tool_neu.log'
+        Set-Content -LiteralPath $alt -Value 'alt'
+        Set-Content -LiteralPath $neu -Value 'neu'
+        (Get-Item -LiteralPath $alt).LastWriteTime = (Get-Date).AddDays(-100)
+
+        Invoke-LogRotation -LogDirectory $script:brk -RetentionDays 30 -Pattern 'Tool_*.log'
+        Test-Path -LiteralPath $alt | Should -BeFalse
+        Test-Path -LiteralPath $neu | Should -BeTrue
+    }
+
+    It 'Invoke-LogFileRotation rotiert eine grosse Datei in einem Verzeichnis mit [ ]' {
+        New-Item -ItemType Directory -Path $script:brk -Force | Out-Null
+        $logPath = Join-Path $script:brk 'gross.log'
+        [System.IO.File]::WriteAllText($logPath, ('x' * 3000))
+        Set-Content -LiteralPath ($logPath + '.1') -Value 'aelter'
+
+        Invoke-LogFileRotation -LogFilePath $logPath -MaxSizeKB 1 -MaxGenerations 3
+        Test-Path -LiteralPath $logPath | Should -BeFalse
+        Test-Path -LiteralPath ($logPath + '.1') | Should -BeTrue
+        Test-Path -LiteralPath ($logPath + '.2') | Should -BeTrue
+    }
+}

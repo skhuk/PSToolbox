@@ -25,7 +25,7 @@ Get-Help Merge-Hashtable -Full
 | `Get-DirectorySize` | Rekursive Gesamtgroesse eines Verzeichnisses in Bytes |
 | `Get-DiskFreeSpaceInfo` | Freier/gesamter Speicherplatz eines Pfads, UNC-faehig (P/Invoke) |
 | `Test-IsAdministrator` | Prueft, ob der aktuelle Prozess erhoehte Rechte hat |
-| `Invoke-WithRetry` | Fuehrt einen ScriptBlock mit Wiederholung und linearem Backoff aus |
+| `Invoke-WithRetry` | Fuehrt einen ScriptBlock mit Wiederholung und linearem Backoff aus. Wiederholt standardmaessig nur terminierende Fehler und jeden davon; `-StopOnError` (auch nicht-terminierende Cmdlet-Fehler) und `-ShouldRetry` (nur bestimmte Fehler wiederholen) sind optional |
 | `ConvertTo-SafeFileName` | Entfernt/ersetzt in Windows-Dateinamen ungueltige Zeichen |
 | `Test-PathWritable` | Prueft per Testdatei, ob ein Verzeichnis beschreibbar ist |
 | `Join-BasePath` | Wie `Join-Path`, aber ein vollstaendiger `ChildPath` (Laufwerksbuchstabe/UNC) ueberschreibt `BasePath` statt angehaengt zu werden |

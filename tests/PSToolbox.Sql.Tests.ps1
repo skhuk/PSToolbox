@@ -64,6 +64,49 @@ Describe 'Format-SqlLiteral' {
     It 'wirft bei $null' {
         { Format-SqlLiteral -Value $null } | Should -Throw
     }
+
+    Context 'optionale Schalter (Default bleibt unveraendert)' {
+        It '-UnicodeStrings setzt das N-Praefix nur bei Strings, Quotes werden weiter verdoppelt' {
+            Format-SqlLiteral -Value "O'Brien" -UnicodeStrings | Should -Be "N'O''Brien'"
+            $text = 'Stra' + [char]0x00DF + 'e ' + [char]0x20AC
+            Format-SqlLiteral -Value $text -UnicodeStrings | Should -BeExactly ("N'" + $text + "'")
+        }
+
+        It '-UnicodeStrings aendert Zahlen, Bool und DateTime nicht' {
+            Format-SqlLiteral -Value 42 -UnicodeStrings    | Should -Be '42'
+            Format-SqlLiteral -Value $true -UnicodeStrings | Should -Be '1'
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05') -UnicodeStrings | Should -Be "'2026-01-02 03:04:05'"
+        }
+
+        It 'ohne Schalter bleibt ein String ohne N-Praefix' {
+            Format-SqlLiteral -Value 'abc' | Should -Be "'abc'"
+        }
+
+        It '-DateTimeFormat LanguageNeutral liefert yyyyMMdd HH:mm:ss.fff' {
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05.678') -DateTimeFormat LanguageNeutral |
+                Should -Be "'20260102 03:04:05.678'"
+        }
+
+        It '-DateTimeFormat Default entspricht dem bisherigen Format' {
+            Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05.678') -DateTimeFormat Default |
+                Should -Be "'2026-01-02 03:04:05'"
+        }
+
+        It 'LanguageNeutral ist unabhaengig von der aktuellen Kultur' {
+            $alt = [System.Threading.Thread]::CurrentThread.CurrentCulture
+            try {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+                Format-SqlLiteral -Value ([datetime]'2026-01-02T03:04:05') -DateTimeFormat LanguageNeutral |
+                    Should -Be "'20260102 03:04:05.000'"
+            } finally {
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $alt
+            }
+        }
+
+        It 'lehnt unbekannte DateTimeFormat-Werte ab' {
+            { Format-SqlLiteral -Value (Get-Date) -DateTimeFormat Banane } | Should -Throw
+        }
+    }
 }
 
 Describe 'Expand-SqlPlaceholders' {
@@ -80,6 +123,47 @@ Describe 'Expand-SqlPlaceholders' {
     It 'quotet String-Werte im Template' {
         Expand-SqlPlaceholders -Template 'Name = :Name' -ResolvedValues @{ Name = "O'Brien" } |
             Should -Be "Name = 'O''Brien'"
+    }
+
+    It 'durchsucht eingesetzte Werte nicht erneut nach Platzhaltern' {
+        $result = Expand-SqlPlaceholders -Template 'SELECT :a, :b' -ResolvedValues @{ a = 'x:b'; b = 'BOOM' }
+        $result | Should -Be "SELECT 'x:b', 'BOOM'"
+    }
+
+    It 'verkettet Werte nicht, die ihrerseits Platzhalter enthalten (zyklisch, daher reihenfolgeunabhaengig)' {
+        # a -> :b, b -> :c, c -> :a: bei sequentiellem Ersetzen entsteht in JEDER
+        # Aufzaehlungsreihenfolge mindestens eine Kette
+        $r = Expand-SqlPlaceholders -Template ':a :b :c' -ResolvedValues @{ a = ':b'; b = ':c'; c = ':a' }
+        $r | Should -Be "':b' ':c' ':a'"
+    }
+
+    It 'ersetzt einen mehrfach vorkommenden Platzhalter jedes Mal' {
+        Expand-SqlPlaceholders -Template ':n + :n' -ResolvedValues @{ n = 3 } | Should -Be '3 + 3'
+    }
+
+    It 'laesst unbekannte Platzhalter und Namen mit anderer Gross-/Kleinschreibung unveraendert' {
+        Expand-SqlPlaceholders -Template ':a :A :x' -ResolvedValues @{ a = 1 } | Should -Be '1 :A :x'
+    }
+
+    It 'behandelt Sonderzeichen in Namen und Werten wortwoertlich (kein Regex, kein $-Ersatz)' {
+        $r = Expand-SqlPlaceholders -Template 'v = :a.b' -ResolvedValues @{ 'a.b' = 'x$1\y' }
+        $r | Should -BeExactly "v = 'x`$1\y'"
+    }
+
+    It 'reicht -UnicodeStrings und -DateTimeFormat an Format-SqlLiteral durch' {
+        $r = Expand-SqlPlaceholders -Template 'n = :n AND t = :t AND z = :z' `
+            -ResolvedValues @{ n = 'abc'; t = ([datetime]'2026-01-02T03:04:05'); z = 7 } `
+            -UnicodeStrings -DateTimeFormat LanguageNeutral
+        $r | Should -Be "n = N'abc' AND t = '20260102 03:04:05.000' AND z = 7"
+    }
+
+    It 'ohne Schalter bleibt die Ausgabe von Expand-SqlPlaceholders unveraendert' {
+        Expand-SqlPlaceholders -Template ':n :t' -ResolvedValues @{ n = 'abc'; t = ([datetime]'2026-01-02T03:04:05') } |
+            Should -Be "'abc' '2026-01-02 03:04:05'"
+    }
+
+    It 'gibt das Template unveraendert zurueck, wenn keine Werte uebergeben werden' {
+        Expand-SqlPlaceholders -Template 'Nr >= :MaxNr' -ResolvedValues @{} | Should -Be 'Nr >= :MaxNr'
     }
 }
 
@@ -166,6 +250,35 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
             { Initialize-PSToolboxDelimitedDataReaderType } | Should -Not -Throw
             ('PSToolboxDelimitedDataReader' -as [type]) | Should -Not -BeNullOrEmpty
         }
+    }
+
+    It 'liest eine ANSI-Datei (Windows-1252) mit explizitem Encoding in beiden Editionen gleich' {
+        InModuleScope 'PSToolbox.Sql' {
+            Initialize-PSToolboxDelimitedDataReaderType
+
+            $path = Join-Path $TestDrive 'reader-ansi.csv'
+            # "Name;Wert" / "M" + 0xF6 + "ller;1" als Windows-1252-Bytes
+            $bytes = [byte[]]@(0x4E,0x61,0x6D,0x65,0x3B,0x57,0x65,0x72,0x74,0x0D,0x0A,
+                               0x4D,0xF6,0x6C,0x6C,0x65,0x72,0x3B,0x31,0x0D,0x0A)
+            [System.IO.File]::WriteAllBytes($path, $bytes)
+
+            $ansi = [System.Text.Encoding]::GetEncoding(1252)
+            $reader = New-Object PSToolboxDelimitedDataReader -ArgumentList $path, $ansi, ([char]';'), $true
+            try {
+                $reader.Read() | Should -BeTrue
+                $name = [string]$reader.GetValue(0)
+                $name.Length | Should -Be 6
+                [int]$name[1] | Should -Be 0x00F6
+            } finally {
+                $reader.Dispose()
+            }
+        }
+    }
+
+    It 'Import-DelimitedFileToSqlTable behaelt [System.Text.Encoding]::Default als Parameter-Default (bewusste Entscheidung, nur dokumentiert)' {
+        $param = (Get-Command Import-DelimitedFileToSqlTable).ScriptBlock.Ast.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'Encoding' }
+        $param.DefaultValue.Extent.Text | Should -Be '[System.Text.Encoding]::Default'
     }
 
     It 'liest Header und Zeilen als Strings, leerer String wird zu DBNull' {

@@ -84,6 +84,55 @@ Describe 'ConvertTo-HashtableFromPSCustomObject' {
         $result.Nested.Inner   | Should -Be 42
         $result.Nested.Deeper.Flag | Should -BeTrue
     }
+
+    It 'konvertiert PSCustomObject-Elemente in Arrays zu Hashtables' {
+        $json = '{ "Items": [ { "Name": "a", "N": 1 }, { "Name": "b", "N": 2 } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.Items.Count   | Should -Be 2
+        $result.Items[0]      | Should -BeOfType [hashtable]
+        $result.Items[1].Name | Should -Be 'b'
+        $result.Items[1].N    | Should -Be 2
+    }
+
+    It 'behaelt ein Array mit nur einem Objekt als Array' {
+        $json = '{ "Items": [ { "Name": "a" } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        , $result.Items | Should -BeOfType [object[]]
+        @($result.Items).Count | Should -Be 1
+        $result.Items[0] | Should -BeOfType [hashtable]
+    }
+
+    It 'konvertiert verschachtelte Arrays und Objekte in Arrays rekursiv' {
+        $json = '{ "M": [ [ { "x": 1 } ], [ 2, 3 ] ], "O": [ { "In": [ { "y": 5 } ] } ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.M[0][0]    | Should -BeOfType [hashtable]
+        $result.M[0][0].x  | Should -Be 1
+        $result.M[1].Count | Should -Be 2
+        $result.M[1][1]    | Should -Be 3
+        $result.O[0].In[0] | Should -BeOfType [hashtable]
+        $result.O[0].In[0].y | Should -Be 5
+    }
+
+    It 'laesst Arrays aus Skalaren und leere Arrays unveraendert' {
+        $json = '{ "S": [ 1, 2, 3 ], "T": [ "a", "b" ], "E": [] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.S.Count | Should -Be 3
+        $result.S[2]    | Should -Be 3
+        $result.T[0]    | Should -Be 'a'
+        @($result.E).Count | Should -Be 0
+        , $result.E | Should -BeOfType [object[]]
+    }
+
+    It 'behaelt null-Werte und Skalare neben Arrays' {
+        $json = '{ "A": null, "B": "text", "C": [ null, 1 ] }' | ConvertFrom-Json
+        $result = ConvertTo-HashtableFromPSCustomObject -InputObject $json
+        $result.ContainsKey('A') | Should -BeTrue
+        $result.A | Should -BeNullOrEmpty
+        $result.B | Should -Be 'text'
+        $result.C.Count | Should -Be 2
+        $result.C[0] | Should -BeNullOrEmpty
+        $result.C[1] | Should -Be 1
+    }
 }
 
 Describe 'Get-PSToolboxConfig' {
@@ -132,6 +181,15 @@ Describe 'Get-PSToolboxConfig' {
 
         (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $ohneBom).SqlLogging.Password | Should -BeExactly $wert
         (Get-PSToolboxConfig -Path $script:configPath -SecretsPath $mitBom).SqlLogging.Password  | Should -BeExactly $wert
+    }
+
+    It 'liefert Objekte in JSON-Arrays der Secrets-Datei als Hashtables' {
+        $secretsPath = Join-Path $TestDrive 'secrets_array.json'
+        Set-Content -Path $secretsPath -Value '{ "Servers": [ { "Host": "a" }, { "Host": "b" } ] }'
+        $cfg = Get-PSToolboxConfig -Path $script:configPath -SecretsPath $secretsPath
+        $cfg.Servers.Count   | Should -Be 2
+        $cfg.Servers[1]      | Should -BeOfType [hashtable]
+        $cfg.Servers[1].Host | Should -Be 'b'
     }
 
     It 'findet Konfigurations- und Secrets-Dateien in Pfaden mit eckigen Klammern' {
@@ -280,6 +338,110 @@ Describe 'Invoke-WithRetry' {
             Should -Throw 'immer fehlerhaft'
         $script:calls | Should -Be 2
     }
+
+    It 'fuehrt bei MaxAttempts unter 1 genau einen Versuch aus' {
+        $script:calls = 0
+        { Invoke-WithRetry -MaxAttempts 0 -DelaySeconds 0 -ScriptBlock { $script:calls++; throw 'x' } } | Should -Throw
+        $script:calls | Should -Be 1
+    }
+
+    It 'meldet jeden Fehlversuch (ausser dem letzten) als Warnung' {
+        $script:calls = 0
+        $w = $null
+        try {
+            Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -WarningVariable w -WarningAction SilentlyContinue -ScriptBlock {
+                $script:calls++; throw 'x' }
+        } catch { $null = $_ }
+        $script:calls | Should -Be 3
+        @($w).Count | Should -Be 2
+    }
+
+    Context 'nicht-terminierende Fehler (-StopOnError)' {
+        It 'wiederholt einen nicht-terminierenden Cmdlet-Fehler standardmaessig NICHT (dokumentierter Fallstrick)' {
+            $script:calls = 0
+            $missing = Join-Path $TestDrive 'gibt-es-nicht.txt'
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -ScriptBlock {
+                $script:calls++
+                Remove-Item -LiteralPath $missing -ErrorAction Continue
+            } } | Should -Not -Throw
+            $script:calls | Should -Be 1
+        }
+
+        It 'wiederholt ihn mit -StopOnError und gibt bei spaeterem Erfolg den Wert zurueck' {
+            $script:calls = 0
+            $file = Join-Path $TestDrive 'spaeter.txt'
+            $result = Invoke-WithRetry -StopOnError -MaxAttempts 3 -DelaySeconds 0 -ScriptBlock {
+                $script:calls++
+                if ($script:calls -eq 2) { Set-Content -LiteralPath $file -Value 'da' }
+                Get-Content -LiteralPath $file
+            }
+            $result | Should -Be 'da'
+            $script:calls | Should -Be 2
+        }
+
+        It 'stellt $ErrorActionPreference nach -StopOnError wieder her (auch bei Fehler)' {
+            $before = $global:ErrorActionPreference
+            $global:ErrorActionPreference = 'Continue'
+            try {
+                # Waehrend des ScriptBlocks gilt 'Stop', danach wieder der alte Wert
+                Invoke-WithRetry -StopOnError -MaxAttempts 1 -DelaySeconds 0 -ScriptBlock { $global:ErrorActionPreference } |
+                    Should -Be 'Stop'
+                $global:ErrorActionPreference | Should -Be 'Continue'
+
+                { Invoke-WithRetry -StopOnError -MaxAttempts 1 -DelaySeconds 0 -ScriptBlock { throw 'x' } } | Should -Throw 'x'
+                $global:ErrorActionPreference | Should -Be 'Continue'
+            } finally {
+                $global:ErrorActionPreference = $before
+            }
+        }
+    }
+
+    Context '-ShouldRetry' {
+        It 'bricht bei einem nicht wiederholbaren Fehler sofort ab (ein Versuch, keine Warnung)' {
+            $script:calls = 0
+            $w = $null
+            $message = $null
+            try {
+                Invoke-WithRetry -MaxAttempts 5 -DelaySeconds 0 -WarningVariable w -WarningAction SilentlyContinue `
+                    -ShouldRetry { $_.Exception -is [System.IO.IOException] } -ScriptBlock {
+                        $script:calls++
+                        throw [System.UnauthorizedAccessException]::new('Zugriff verweigert')
+                    }
+            } catch { $message = $_.Exception.Message }
+            $message | Should -Be 'Zugriff verweigert'
+            $script:calls | Should -Be 1
+            @($w).Count | Should -Be 0
+        }
+
+        It 'wiederholt einen Fehler, den ShouldRetry zulaesst' {
+            $script:calls = 0
+            $result = Invoke-WithRetry -MaxAttempts 4 -DelaySeconds 0 -WarningAction SilentlyContinue `
+                -ShouldRetry { $_.Exception -is [System.IO.IOException] } -ScriptBlock {
+                    $script:calls++
+                    if ($script:calls -lt 3) { throw [System.IO.IOException]::new('gesperrt') }
+                    'ok'
+                }
+            $result | Should -Be 'ok'
+            $script:calls | Should -Be 3
+        }
+
+        It 'uebergibt den ErrorRecord als $_ und bricht ohne Ausgabe des Blocks ab' {
+            $script:seen = $null
+            $script:calls = 0
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -ShouldRetry { $script:seen = $_ } -ScriptBlock {
+                $script:calls++; throw 'meldung' } } | Should -Throw 'meldung'
+            $script:seen | Should -BeOfType [System.Management.Automation.ErrorRecord]
+            $script:seen.Exception.Message | Should -Be 'meldung'
+            $script:calls | Should -Be 1
+        }
+
+        It 'ohne ShouldRetry werden weiterhin alle Fehler wiederholt (Standard unveraendert)' {
+            $script:calls = 0
+            { Invoke-WithRetry -MaxAttempts 3 -DelaySeconds 0 -WarningAction SilentlyContinue -ScriptBlock {
+                $script:calls++; throw [System.UnauthorizedAccessException]::new('x') } } | Should -Throw
+            $script:calls | Should -Be 3
+        }
+    }
 }
 
 Describe 'Test-PathWritable' {
@@ -395,5 +557,31 @@ Describe 'Test-FileMinLineCount' {
 
         $elapsed = Measure-Command { Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue }
         $elapsed.TotalSeconds | Should -BeLessThan 1
+    }
+}
+
+Describe 'Pfade mit eckigen Klammern (Common)' {
+    BeforeEach {
+        $script:brk = Join-Path $TestDrive ('br[' + [Guid]::NewGuid().ToString('N').Substring(0, 6) + ']')
+        New-Item -ItemType Directory -Path $script:brk -Force | Out-Null
+    }
+
+    It 'Test-PathWritable erkennt ein beschreibbares Verzeichnis mit [ ] im Namen' {
+        Test-PathWritable -Path $script:brk | Should -BeTrue
+    }
+
+    It 'Test-FileMinLineCount liest eine Datei in einem Verzeichnis mit [ ] im Namen' {
+        $file = Join-Path $script:brk 'z.csv'
+        [System.IO.File]::WriteAllText($file, "kopf`r`nzeile`r`n")
+        Test-FileMinLineCount -Path $file -MinLines 2 | Should -BeTrue
+    }
+
+    It 'Test-PSToolboxFileSigned erkennt den Signaturblock bei Pfaden mit [ ]' {
+        $signed   = Join-Path $script:brk 's.ps1'
+        $unsigned = Join-Path $script:brk 'u.ps1'
+        [System.IO.File]::WriteAllText($signed, "Write-Host 1`r`n# SIG # Begin signature block`r`n")
+        [System.IO.File]::WriteAllText($unsigned, "Write-Host 1`r`n")
+        Test-PSToolboxFileSigned -Path $signed   | Should -BeTrue
+        Test-PSToolboxFileSigned -Path $unsigned | Should -BeFalse
     }
 }
