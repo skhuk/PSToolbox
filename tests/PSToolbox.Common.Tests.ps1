@@ -179,6 +179,31 @@ Describe 'Get-DirectorySize' {
         Get-DirectorySize -Path $dir | Should -Be 15
     }
 
+    It 'warnt nicht bei einem leeren Verzeichnis' {
+        $dir = Join-Path $TestDrive 'EmptyNoWarn'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $null = Get-DirectorySize -Path $dir -WarningVariable warn -WarningAction SilentlyContinue
+        @($warn).Count | Should -Be 0
+    }
+
+    It 'liefert die Teilsumme, wenn ein Unterordner nicht lesbar ist' {
+        $dir    = Join-Path $TestDrive 'PartialDir'
+        $okDir  = Join-Path $dir 'Ok'
+        $badDir = Join-Path $dir 'Gesperrt'
+        New-Item -ItemType Directory -Path $okDir, $badDir -Force | Out-Null
+        Set-Content -Path (Join-Path $okDir 'a.txt')  -Value 'AAAAA'      -Encoding ASCII -NoNewline # 5 Bytes
+        Set-Content -Path (Join-Path $badDir 'b.txt') -Value 'BBBBBBBBBB' -Encoding ASCII -NoNewline # 10 Bytes
+
+        $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        & icacls.exe $badDir /deny "${user}:(OI)(CI)(RX)" | Out-Null
+        try {
+            Get-DirectorySize -Path $dir -WarningVariable warn -WarningAction SilentlyContinue | Should -Be 5
+            @($warn).Count | Should -Be 0
+        } finally {
+            & icacls.exe $badDir /remove:d $user | Out-Null
+        }
+    }
+
     It 'gibt 0 zurueck fuer nicht-existierenden Pfad und wirft keine Exception' {
         { Get-DirectorySize -Path (Join-Path $TestDrive 'GibtEsNicht') -WarningAction SilentlyContinue } |
             Should -Not -Throw

@@ -11,6 +11,16 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.2] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Get-DirectorySize` | PSToolbox.Common (1.4.1) | Fehlerbehebung: Ein nicht lesbarer Unterordner (Zugriff verweigert) liess die ganze Ermittlung mit Ergebnis 0 abbrechen, obwohl die Doku "ueberspringen" beschreibt. Jetzt wird die Summe der lesbaren Dateien geliefert, uebersprungene Elemente erscheinen nur unter `-Verbose`. Ausserdem keine Warnung mehr bei leeren Verzeichnissen (`Measure-Object ... .Sum` schlug unter StrictMode fehl und wurde als Fehler gewertet). Nicht gefundener oder selbst nicht lesbarer Pfad: weiterhin 0 mit Warnung. Rueckgabetyp und Parameter unveraendert. Windows PowerShell 5.1 und 7 getestet. |
+
+---
+
 ## [1.6.1] - 2026-07-17
 
 ### Sonstiges

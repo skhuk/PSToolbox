@@ -364,9 +364,10 @@ function Get-DirectorySize {
 
     .DESCRIPTION
         Summiert die Laenge aller Dateien unterhalb von Path. Nicht lesbare
-        Elemente werden stillschweigend uebersprungen (-ErrorAction
-        SilentlyContinue); im Fehlerfall wird 0 zurueckgegeben und eine Warnung
-        ausgegeben.
+        Elemente (z. B. ein Unterordner ohne Zugriffsrecht) werden uebersprungen
+        und nur per -Verbose gemeldet; das Ergebnis ist dann die Summe der
+        lesbaren Dateien. Existiert Path nicht oder ist Path selbst nicht
+        lesbar, wird 0 zurueckgegeben und eine Warnung ausgegeben.
 
     .PARAMETER Path
         Wurzelverzeichnis, dessen Groesse ermittelt werden soll.
@@ -384,14 +385,28 @@ function Get-DirectorySize {
         [string]$Path
     )
 
-    try {
-        $files = Get-ChildItem -Path $Path -Recurse -File -ErrorAction Stop
-        $sum   = ($files | Measure-Object -Property Length -Sum).Sum
-        return [long]$(if ($sum) { $sum } else { 0 })
-    } catch {
-        Write-Warning "Verzeichnisgroesse konnte nicht ermittelt werden fuer '$Path': $_"
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "Verzeichnisgroesse konnte nicht ermittelt werden fuer '$Path': Pfad nicht gefunden."
         return [long]0
     }
+
+    # Manuell summieren: Measure-Object liefert bei leerer Eingabe keine
+    # Sum-Eigenschaft (StrictMode). Nicht lesbare Elemente brechen die
+    # Aufzaehlung nicht ab (SilentlyContinue), sondern landen in $skipped.
+    [long]$sum = 0
+    $skipped = $null
+    foreach ($file in (Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue -ErrorVariable skipped)) {
+        $sum += $file.Length
+    }
+
+    foreach ($err in @($skipped)) {
+        if ($err.TargetObject -eq $Path) {
+            Write-Warning "Verzeichnisgroesse konnte nicht ermittelt werden fuer '$Path': $($err.Exception.Message)"
+        } else {
+            Write-Verbose "Get-DirectorySize: uebersprungen (nicht lesbar): $($err.TargetObject)"
+        }
+    }
+    return $sum
 }
 
 function Get-DiskFreeSpaceInfo {
