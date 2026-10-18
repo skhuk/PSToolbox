@@ -310,3 +310,22 @@ Describe 'PSToolboxDelimitedDataReader (IDataReader hinter -RawStrings)' {
         }
     }
 }
+
+Describe 'Write-PSToolboxSqlTrace' {
+    It 'wirft nicht bei gesperrter Logdatei (Trace ist reine Diagnose), warnt stattdessen' {
+        $logPath = Join-Path $TestDrive 'trace_locked.log'
+        Set-Content -Path $logPath -Value 'alt' -Encoding ASCII
+        $lock = [System.IO.File]::Open($logPath, 'Open', 'ReadWrite', 'None')
+        $eapBackup = $global:ErrorActionPreference
+        try {
+            $global:ErrorActionPreference = 'Stop'
+            InModuleScope 'PSToolbox.Sql' -Parameters @{ logPath = $logPath } {
+                { Write-PSToolboxSqlTrace -Message 'SELECT 1' -LogFilePath $logPath -WarningAction SilentlyContinue } |
+                    Should -Not -Throw
+            }
+        } finally {
+            $global:ErrorActionPreference = $eapBackup
+            $lock.Dispose()
+        }
+    }
+}

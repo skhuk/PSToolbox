@@ -125,7 +125,14 @@ function Write-PSToolboxSqlTrace {
     Write-Verbose $line
 
     if (-not [string]::IsNullOrEmpty($LogFilePath)) {
-        Add-Content -Path $LogFilePath -Value $line -Encoding UTF8
+        # Trace ist reine Diagnose: ein nicht beschreibbares Log darf die
+        # SQL-Ausfuehrung nicht abbrechen (kein Retry, da ohne Abhaengigkeit
+        # zu PSToolbox.Logging).
+        try {
+            Add-Content -LiteralPath $LogFilePath -Value $line -Encoding UTF8 -ErrorAction Stop
+        } catch {
+            Write-Warning "Trace-Logdatei '$LogFilePath' konnte nicht beschrieben werden: $($_.Exception.Message)"
+        }
     }
 }
 

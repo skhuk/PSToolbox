@@ -11,6 +11,19 @@ Funktionalitaet, Patch = Fehlerbehebung. Die `ModuleVersion` in den
 
 ---
 
+## [1.6.3] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Write-Log`, `Write-LogEntry`, `Initialize-Logging`, `Write-SqlLogEntry` (Datei-Fallback) | PSToolbox.Logging (1.2.1) | Fehlerbehebung: Eine gesperrte oder nicht erreichbare Logdatei (paralleler Lauf, Share-Ausfall) liess den Aufrufer abbrechen, sobald `$ErrorActionPreference = 'Stop'` galt. Logging ist jetzt fail-soft: das Anhaengen wird bis zu 3-mal im Abstand von 100 ms wiederholt (interne Hilfsfunktion `Add-PSToolboxLogLine`, nicht exportiert); schlaegt auch der letzte Versuch fehl, gibt es je Datei und Modulsitzung genau EINE Warnung und der Lauf geht weiter. Anlegen des Log-Verzeichnisses (`Initialize-Logging`, `Write-LogEntry`) und die Groessen-Rotation in `Write-LogEntry` sind best effort. Zusaetzlich `-LiteralPath` an diesen Stellen. Signaturen und Rueckgabewerte unveraendert. |
+| `-Trace`-Modus der SQL-Ausfuehrungsfunktionen (`Write-PSToolboxSqlTrace`) | PSToolbox.Sql (1.5.1) | Eine nicht beschreibbare Trace-Logdatei bricht die SQL-Ausfuehrung nicht mehr ab, sondern erzeugt eine Warnung (ohne Retry, da PSToolbox.Sql keine Abhaengigkeit zu PSToolbox.Logging hat). |
+
+Windows PowerShell 5.1 und 7 getestet.
+
+---
+
 ## [1.6.2] - 2026-10-18
 
 ### Geaenderte Funktionen
