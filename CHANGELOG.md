@@ -19,6 +19,21 @@ Manifests. Welche Modulversion ein Release enthaelt, steht in der Spalte
 
 ---
 
+## [1.11.0] - 2026-10-18
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Invoke-LogRotation` | PSToolbox.Logging (1.3.0) | Unterstuetzt jetzt `-WhatIf`/`-Confirm` (`SupportsShouldProcess`). Die Hilfe warnt, dass das Default-Pattern `*.log` auch fremde Logs im selben Verzeichnis trifft. **Default unveraendert**, bestehende Aufrufe verhalten sich gleich. `Initialize-Logging` uebergibt weiterhin ein Praefix-Pattern. |
+| `Write-SqlLogEntry` | PSToolbox.Logging (1.3.0) | `-Description` ist jetzt ein untypisierter Wert: ohne Angabe oder mit `$null` wird SQL `NULL` geschrieben (vorher wurde `$null` durch die Typumwandlung zu `''`); ein leerer Text bleibt `''`. `-Schema` und `-Table` werden als Bezeichner gequotet (`]` wird verdoppelt), Namen mit Sonderzeichen brechen die Anweisung nicht mehr und lassen sich nicht zum Ausbruch nutzen. Bisherige Aufrufe mit gueltigen Namen sind unveraendert. |
+
+### Sonstiges
+
+- Test `Test-FileMinLineCount` mit Windows-1252: das `ß` wird per `[char]0xDF` erzeugt statt als Literal in einer Datei ohne BOM (Windows PowerShell 5.1 las es als ANSI und pruefte damit nicht, was der Test behauptet).
+
+---
+
 ## [1.10.0] - 2026-10-18
 
 ### Geaenderte Funktionen
