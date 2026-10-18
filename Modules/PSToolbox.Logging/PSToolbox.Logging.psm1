@@ -479,12 +479,19 @@ function Invoke-LogRotation {
         Dateien mit LastWriteTime aelter als heute minus RetentionDays werden geloescht.
 
     .PARAMETER Pattern
-        Dateinamen-Filter (Wildcard), Standard '*.log'.
+        Dateinamen-Filter (Wildcard), Standard '*.log'. ACHTUNG: Der Standard
+        trifft alle .log-Dateien im Verzeichnis, auch fremde. Teilt sich das
+        Verzeichnis mehrere Programme, immer ein eigenes Pattern angeben
+        (Initialize-Logging tut das mit "<Praefix>_*.log"). Mit -WhatIf zeigt
+        die Funktion vorab, welche Dateien geloescht wuerden.
 
     .EXAMPLE
         Invoke-LogRotation -LogDirectory 'C:\Logs\MeinTool' -RetentionDays 90 -Pattern 'MeinTool_*.log'
+
+    .EXAMPLE
+        Invoke-LogRotation -LogDirectory 'C:\Logs' -RetentionDays 30 -WhatIf
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]
         [string]$LogDirectory,
@@ -501,7 +508,7 @@ function Invoke-LogRotation {
     $cutoff = (Get-Date).AddDays(-$RetentionDays)
     Get-ChildItem -LiteralPath $LogDirectory -Filter $Pattern -File -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt $cutoff } |
-        Remove-Item -Force -ErrorAction SilentlyContinue
+        Remove-Item -Force -ErrorAction SilentlyContinue -WhatIf:$WhatIfPreference
 }
 
 function Resolve-PSToolboxSqlClientType {
@@ -602,16 +609,18 @@ function Write-SqlLogEntry {
         Schweregrad, typischerweise INFO, WARNING, ERROR oder CRITICAL.
 
     .PARAMETER Description
-        Optionaler Freitext-Kommentar/Beschreibung.
+        Optionaler Freitext-Kommentar/Beschreibung. Ohne Angabe oder mit $null
+        wird SQL NULL geschrieben, ein leerer Text bleibt ein leerer Text.
 
     .PARAMETER ConnectionString
         ADO.NET-Connection-String zur SQL-Server-Datenbank.
 
     .PARAMETER Schema
-        Schema der Zieltabelle (Standard 'log').
+        Schema der Zieltabelle (Standard 'log'). Wird als Bezeichner gequotet
+        (']' wird verdoppelt); Namen mit Sonderzeichen sind dadurch sicher.
 
     .PARAMETER Table
-        Name der Zieltabelle (Standard 'log').
+        Name der Zieltabelle (Standard 'log'), gequotet wie Schema.
 
     .PARAMETER Hostname
         Rechnername des Aufrufers (Standard $env:COMPUTERNAME).
@@ -639,7 +648,7 @@ function Write-SqlLogEntry {
         [string]$Severity,
 
         [AllowNull()]
-        [string]$Description = $null,
+        [object]$Description = $null,
 
         [Parameter(Mandatory)]
         [string]$ConnectionString,
@@ -667,7 +676,11 @@ function Write-SqlLogEntry {
     $ProcessName = & $truncate $ProcessName 255
     $State       = & $truncate $State       50
     $Severity    = & $truncate $Severity    20
-    $Description = & $truncate $Description 4000
+    # Description bleibt $null (-> DBNull), statt wie bei [string] zu '' zu werden.
+    $Description = if ($null -ne $Description) { & $truncate ([string]$Description) 4000 } else { $null }
+
+    # Schema und Tabelle als Bezeichner quoten (']' verdoppeln, wie QUOTENAME).
+    $quotedTarget = '[{0}].[{1}]' -f $Schema.Replace(']', ']]'), $Table.Replace(']', ']]')
 
     try {
         $connectionType = Resolve-PSToolboxSqlClientType
@@ -675,7 +688,7 @@ function Write-SqlLogEntry {
         $conn.Open()
         try {
             $cmd = $conn.CreateCommand()
-            $cmd.CommandText = "INSERT INTO [$Schema].[$Table] " +
+            $cmd.CommandText = "INSERT INTO $quotedTarget " +
                                "(TS, hostname, processname, state, severity, processid, description) " +
                                "VALUES (GETDATE(), @hostname, @processname, @state, @severity, @processid, @description)"
 

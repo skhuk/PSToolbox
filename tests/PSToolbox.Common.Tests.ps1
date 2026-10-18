@@ -532,7 +532,7 @@ Describe 'Test-FileMinLineCount' {
 
     It 'liest mit expliziter Windows-1252-Kodierung' {
         $file = Join-Path $TestDrive 'ansi.csv'
-        $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes("Straße`r`nZeile1`r`n")
+        $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes("Stra$([char]0xDF)e`r`nZeile1`r`n")
         [System.IO.File]::WriteAllBytes($file, $bytes)
         Test-FileMinLineCount -Path $file -MinLines 2 -Encoding ([System.Text.Encoding]::GetEncoding(1252)) | Should -BeTrue
     }
