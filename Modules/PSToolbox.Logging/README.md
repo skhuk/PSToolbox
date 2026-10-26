@@ -116,6 +116,13 @@ die Spaltenlaengen gekuerzt. Ohne `-SqlConnectionString` (bei
 **nie** eine Exception geworfen (fail-soft) - stattdessen landet eine
 Warnzeile in der Datei-Logdatei.
 
+Optional koennen die Spalten `opt1` und `opt2` (`nvarchar(max)`, `NULL`) beschrieben werden:
+`Write-SqlLogEntry -Opt1 -Opt2`, `Initialize-Logging -Opt1 -Opt2` (gilt fuer den ganzen Lauf)
+sowie `Write-RunStart`/`Write-RunEnd` mit `-Description`, `-Opt1`, `-Opt2` (ueberschreiben
+die Werte aus `Initialize-Logging`). Die Spalten kommen nur in den Insert, wenn ein Wert
+angegeben ist; vorhandene Tabellen ohne die Spalten bleiben nutzbar. Fehlt die Spalte bei
+einer Angabe, steht ein Hinweis in der Warnzeile der Datei-Logdatei.
+
 Korrelation: zusammengehoerige Eintraege eines Laufs finden sich ueber
 `hostname` + `processid` - dieselben Werte stehen in der Session-Startzeile
 der Datei-Logdatei.

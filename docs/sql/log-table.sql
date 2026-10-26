@@ -17,6 +17,8 @@
       processid   - PID der PowerShell-Session; dient zusammen mit hostname
                     zur Korrelation der Eintraege eines Laufs
       description - Freitext (max. 4000 Zeichen, wird clientseitig gekuerzt)
+      opt1        - optional, nvarchar(max): z. B. Gruppe; nur im Insert, wenn angegeben
+      opt2        - optional, nvarchar(max): freie Zusatzangaben; nur im Insert, wenn angegeben
 */
 
 CREATE TABLE [log].[LOG](
@@ -33,3 +35,10 @@ PRIMARY KEY CLUSTERED
 	[id] DESC
 )
 )
+
+/*
+    Optionale Erweiterung um opt1/opt2 (nur wenn benoetigt; bestehende Tabellen
+    ohne diese Spalten bleiben mit unveraenderten Aufrufen nutzbar):
+
+    ALTER TABLE [log].[LOG] ADD [opt1] [nvarchar](max) NULL, [opt2] [nvarchar](max) NULL;
+*/

@@ -19,6 +19,21 @@ Manifests. Welche Modulversion ein Release enthaelt, steht in der Spalte
 
 ---
 
+## [1.12.0] - 2026-10-25
+
+### Geaenderte Funktionen
+
+| Funktion | Modul | Aenderung |
+|---|---|---|
+| `Write-SqlLogEntry` | PSToolbox.Logging (1.4.0) | Neue optionale Parameter `-Opt1`/`-Opt2` (Spalten `opt1`/`opt2`, `nvarchar(max)`). Die Spalten kommen nur in den Insert, wenn der Wert angegeben ist; ohne Angabe ist der Befehl unveraendert. Bei fehlenden Spalten steht ein Hinweis in der Fail-soft-Warnzeile. |
+| `Initialize-Logging` | PSToolbox.Logging (1.4.0) | Neue optionale Parameter `-Opt1`/`-Opt2` (Modulzustand fuer `Write-RunStart`/`Write-RunEnd`). |
+| `Write-RunStart` | PSToolbox.Logging (1.4.0) | Neue optionale Parameter `-Description`, `-Opt1`, `-Opt2`; Vorgabewerte sind der Kommentar bzw. die Werte aus `Initialize-Logging`. |
+| `Write-RunEnd` | PSToolbox.Logging (1.4.0) | Wie `Write-RunStart`; mehrfacher Aufruf je Lauf (z. B. je Projekt) ist dokumentiert. |
+
+Alle Aenderungen sind abwaertskompatibel: bestehende Aufrufe verhalten sich gleich.
+
+---
+
 ## [1.11.0] - 2026-10-18
 
 ### Geaenderte Funktionen

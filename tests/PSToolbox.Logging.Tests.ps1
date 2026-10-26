@@ -356,3 +356,189 @@ Describe 'Logging mit eckigen Klammern im Pfad' {
         Test-Path -LiteralPath ($logPath + '.2') | Should -BeTrue
     }
 }
+
+Describe 'Initialize-Logging Opt1/Opt2 (Modulzustand)' {
+    It 'laesst Opt1 und Opt2 ohne Angabe auf $null' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'opt_default') -RetentionDays 0
+        InModuleScope PSToolbox.Logging {
+            $script:Opt1 | Should -BeNull
+            $script:Opt2 | Should -BeNull
+        }
+    }
+
+    It 'speichert angegebene Werte fuer Opt1 und Opt2' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'opt_set') -RetentionDays 0 -Opt1 'Gruppe1' -Opt2 'x=1'
+        InModuleScope PSToolbox.Logging {
+            $script:Opt1 | Should -BeExactly 'Gruppe1'
+            $script:Opt2 | Should -BeExactly 'x=1'
+        }
+    }
+
+    It 'setzt Opt1 und Opt2 bei erneutem Aufruf ohne Angabe zurueck' {
+        $dir = Join-Path $TestDrive 'opt_reset'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0 -Opt1 'Gruppe1' -Opt2 'x=1'
+        Initialize-Logging -LogDirectory $dir -RetentionDays 0
+        InModuleScope PSToolbox.Logging {
+            $script:Opt1 | Should -BeNull
+            $script:Opt2 | Should -BeNull
+        }
+    }
+
+    It 'speichert eine Zahl als gegebenen Wert, nicht als String' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'opt_num') -RetentionDays 0 -Opt1 2
+        InModuleScope PSToolbox.Logging {
+            $script:Opt1 | Should -BeOfType ([int])
+            $script:Opt1 | Should -Be 2
+        }
+    }
+}
+
+Describe 'Write-RunStart Description/Opt1/Opt2' {
+    BeforeAll {
+        $script:cs = 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1'
+    }
+
+    It 'nimmt ohne Parameter Kommentar, Opt1 und Opt2 aus Initialize-Logging' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'rs_default') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A' -Opt1 'o1' -Opt2 'o2'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunStart
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $Description -eq 'Kommentar A' -and $Opt1 -eq 'o1' -and $Opt2 -eq 'o2'
+            }
+        }
+    }
+
+    It '-Description ueberschreibt den Kommentar' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'rs_desc') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A' -Opt1 'o1' -Opt2 'o2'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunStart -Description 'Projekt AMOR'
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $Description -eq 'Projekt AMOR' -and $Opt1 -eq 'o1' -and $Opt2 -eq 'o2'
+            }
+        }
+    }
+
+    It '-Opt1 ueberschreibt den Wert aus Initialize-Logging, Opt2 bleibt' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'rs_opt1') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A' -Opt1 'o1' -Opt2 'o2'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunStart -Opt1 '2'
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $Description -eq 'Kommentar A' -and $Opt1 -eq '2' -and $Opt2 -eq 'o2'
+            }
+        }
+    }
+
+    It '-Description $null liefert $null und nicht den Kommentar' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'rs_null') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunStart -Description $null
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter { $null -eq $Description }
+        }
+    }
+
+    It 'ruft ohne SqlConnectionString Write-SqlLogEntry nicht auf, auch mit Parametern' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 'rs_nosql') -RetentionDays 0 -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunStart
+            Write-RunStart -Description 'Projekt AMOR' -Opt1 '2' -Opt2 'x'
+            Should -Invoke Write-SqlLogEntry -Times 0 -Exactly
+        }
+    }
+}
+
+Describe 'Write-RunEnd Description/Opt1/Opt2' {
+    BeforeAll {
+        $script:cs = 'Server=GIBTESNICHT;Database=X;Integrated Security=True;Connect Timeout=1'
+    }
+
+    It 'nimmt ohne Parameter ausser RunErrors Kommentar, Opt1 und Opt2 aus Initialize-Logging' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_default') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A' -Opt1 'o1' -Opt2 'o2'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd -RunErrors 0
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $State -eq 'COMPLETED' -and $Severity -eq 'INFO' -and
+                $Description -eq 'Kommentar A' -and $Opt1 -eq 'o1' -and $Opt2 -eq 'o2'
+            }
+        }
+    }
+
+    It 'Positionsaufruf Write-RunEnd 2 bedeutet RunErrors=2 (FAILED)' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_pos') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd 2
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $State -eq 'FAILED' -and $Severity -eq 'ERROR'
+            }
+        }
+    }
+
+    It '-RunErrors 1 mit -Description liefert FAILED/ERROR und diese Description' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_desc') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd -RunErrors 1 -Description 'AMOR: Quelle nicht erreichbar'
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $State -eq 'FAILED' -and $Severity -eq 'ERROR' -and $Description -eq 'AMOR: Quelle nicht erreichbar'
+            }
+        }
+    }
+
+    It '-Terminated mit -Opt1 liefert TERMINATED/CRITICAL, Opt2 bleibt' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_term') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A' -Opt1 'o1' -Opt2 'o2'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd -Terminated -Opt1 '2'
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter {
+                $State -eq 'TERMINATED' -and $Severity -eq 'CRITICAL' -and $Opt1 -eq '2' -and $Opt2 -eq 'o2'
+            }
+        }
+    }
+
+    It '-Description $null liefert $null und nicht den Kommentar' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_null') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd -Description $null
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter { $null -eq $Description }
+        }
+    }
+
+    It 'zwei Aufrufe schreiben zwei getrennte Eintraege' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_two') -RetentionDays 0 -SqlConnectionString $script:cs `
+            -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd -Description 'Projekt 1'
+            Write-RunEnd -RunErrors 1 -Description 'Projekt 2'
+            Should -Invoke Write-SqlLogEntry -Times 2 -Exactly
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter { $Description -eq 'Projekt 1' -and $State -eq 'COMPLETED' }
+            Should -Invoke Write-SqlLogEntry -Times 1 -Exactly -ParameterFilter { $Description -eq 'Projekt 2' -and $State -eq 'FAILED' }
+        }
+    }
+
+    It 'ruft ohne SqlConnectionString Write-SqlLogEntry nicht auf' {
+        Initialize-Logging -LogDirectory (Join-Path $TestDrive 're_nosql') -RetentionDays 0 -Comment 'Kommentar A'
+        InModuleScope PSToolbox.Logging {
+            Mock Write-SqlLogEntry {}
+            Write-RunEnd
+            Write-RunEnd -RunErrors 1 -Description 'x' -Opt1 '2'
+            Should -Invoke Write-SqlLogEntry -Times 0 -Exactly
+        }
+    }
+}

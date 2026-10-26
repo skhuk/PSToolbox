@@ -81,6 +81,8 @@ $script:SqlSchema     = 'log'
 $script:SqlTable      = 'log'
 $script:ProcessName   = $null
 $script:Comment       = $null
+$script:Opt1          = $null
+$script:Opt2          = $null
 $script:Hostname      = $env:COMPUTERNAME
 $script:ProcessId     = $PID
 
@@ -176,6 +178,13 @@ function Initialize-Logging {
     .PARAMETER LogFilePrefix
         Praefix der taeglichen Logdatei, Format '<Prefix>_yyyy-MM-dd.log' (Standard 'Log').
 
+    .PARAMETER Opt1
+        Optionaler Wert fuer die Spalte opt1 in SQL-Lifecycle-Eintraegen (z. B. Gruppe).
+        Wird von Write-RunStart/Write-RunEnd verwendet, sofern dort nichts anderes angegeben ist.
+
+    .PARAMETER Opt2
+        Optionaler Wert fuer die Spalte opt2, Verhalten wie Opt1.
+
     .EXAMPLE
         Initialize-Logging -LogDirectory 'C:\Logs\MeinTool' -RetentionDays 30 -ProcessName 'MeinTool'
     #>
@@ -193,7 +202,13 @@ function Initialize-Logging {
         [string]$ProcessName = '',
         [string]$Comment     = '',
 
-        [string]$LogFilePrefix = 'Log'
+        [string]$LogFilePrefix = 'Log',
+
+        [AllowNull()]
+        [object]$Opt1 = $null,
+
+        [AllowNull()]
+        [object]$Opt2 = $null
     )
 
     $script:SqlConnString = $SqlConnectionString
@@ -201,6 +216,8 @@ function Initialize-Logging {
     $script:SqlTable      = $SqlTable
     $script:ProcessName   = $ProcessName
     $script:Comment       = if ([string]::IsNullOrWhiteSpace($Comment)) { $null } else { $Comment }
+    $script:Opt1          = $Opt1
+    $script:Opt2          = $Opt2
     $script:Hostname      = $env:COMPUTERNAME
     $script:ProcessId     = $PID
     $script:LogDirectory  = $LogDirectory
@@ -401,18 +418,39 @@ function Write-RunStart {
         bricht nie ab. Ohne konfigurierten SqlConnectionString (siehe
         Initialize-Logging) passiert nichts.
 
+    .PARAMETER Description
+        Optionale Beschreibung fuer diesen Eintrag. Ohne Angabe gilt der Kommentar aus
+        Initialize-Logging. Ein ausdrueckliches $null schreibt SQL NULL.
+
+    .PARAMETER Opt1
+        Optionaler Wert fuer die Spalte opt1. Ohne Angabe gilt der Wert aus Initialize-Logging.
+
+    .PARAMETER Opt2
+        Optionaler Wert fuer die Spalte opt2, Verhalten wie Opt1.
+
     .EXAMPLE
         Write-RunStart
+        Write-RunStart -Description 'Projekt AMOR' -Opt1 '1'
     #>
     [CmdletBinding()]
-    param()
+    param(
+        [AllowNull()]
+        [object]$Description = $script:Comment,
+
+        [AllowNull()]
+        [object]$Opt1 = $script:Opt1,
+
+        [AllowNull()]
+        [object]$Opt2 = $script:Opt2
+    )
 
     if ([string]::IsNullOrWhiteSpace($script:SqlConnString)) { return }
 
-    Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -Description $script:Comment `
+    Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -Description $Description `
         -ConnectionString $script:SqlConnString -Schema $script:SqlSchema -Table $script:SqlTable `
         -Hostname $script:Hostname -ProcessName $script:ProcessName -ProcessId $script:ProcessId `
-        -LogFilePath $script:LogFilePath
+        -LogFilePath $script:LogFilePath `
+        -Opt1 $Opt1 -Opt2 $Opt2
 }
 
 function Write-RunEnd {
@@ -426,6 +464,8 @@ function Write-RunEnd {
           - RunErrors > 0:   FAILED / ERROR
           - sonst:           COMPLETED / INFO
         Fail-soft wie Write-RunStart.
+        Kann mehrfach je Lauf aufgerufen werden (z. B. je Projekt), jeder Aufruf schreibt
+        einen eigenen Eintrag.
 
     .PARAMETER RunErrors
         Anzahl aufgetretener (nicht kritischer) Fehler waehrend des Laufs.
@@ -433,14 +473,34 @@ function Write-RunEnd {
     .PARAMETER Terminated
         Setzen, wenn der Lauf durch einen unbehandelten/kritischen Fehler abgebrochen wurde.
 
+    .PARAMETER Description
+        Optionale Beschreibung fuer diesen Eintrag, z. B. der Fehlergrund. Ohne Angabe gilt der
+        Kommentar aus Initialize-Logging. Ein ausdrueckliches $null schreibt SQL NULL.
+
+    .PARAMETER Opt1
+        Optionaler Wert fuer die Spalte opt1. Ohne Angabe gilt der Wert aus Initialize-Logging.
+
+    .PARAMETER Opt2
+        Optionaler Wert fuer die Spalte opt2, Verhalten wie Opt1.
+
     .EXAMPLE
         Write-RunEnd -RunErrors 2
         Write-RunEnd -Terminated
+        Write-RunEnd -RunErrors 1 -Description 'AMOR: Quelle nicht erreichbar' -Opt1 '1'
     #>
     [CmdletBinding()]
     param(
         [int]$RunErrors = 0,
-        [switch]$Terminated
+        [switch]$Terminated,
+
+        [AllowNull()]
+        [object]$Description = $script:Comment,
+
+        [AllowNull()]
+        [object]$Opt1 = $script:Opt1,
+
+        [AllowNull()]
+        [object]$Opt2 = $script:Opt2
     )
 
     if ([string]::IsNullOrWhiteSpace($script:SqlConnString)) { return }
@@ -453,10 +513,11 @@ function Write-RunEnd {
         'COMPLETED', 'INFO'
     }
 
-    Write-SqlLogEntry -State $state -Severity $severity -Description $script:Comment `
+    Write-SqlLogEntry -State $state -Severity $severity -Description $Description `
         -ConnectionString $script:SqlConnString -Schema $script:SqlSchema -Table $script:SqlTable `
         -Hostname $script:Hostname -ProcessName $script:ProcessName -ProcessId $script:ProcessId `
-        -LogFilePath $script:LogFilePath
+        -LogFilePath $script:LogFilePath `
+        -Opt1 $Opt1 -Opt2 $Opt2
 }
 
 function Invoke-LogRotation {
@@ -591,6 +652,9 @@ function Write-SqlLogEntry {
         Spalten TS, hostname, processname, state, severity, processid,
         description (Referenz-DDL: docs/sql/log-table.sql - PSToolbox legt
         die Tabelle nie an). TS wird serverseitig per GETDATE() gesetzt.
+        Optional koennen die Spalten opt1 und opt2 (nvarchar(max)) beschrieben
+        werden; sie kommen nur in den Insert, wenn der jeweilige Wert angegeben
+        ist. Tabellen ohne diese Spalten bleiben mit unveraenderten Aufrufen nutzbar.
         Werte werden defensiv auf die Spaltenlaengen gekuerzt (hostname/
         processname 255, state 50, severity 20, description 4000 Zeichen).
         Fail-soft: Verbindungs-/Ausfuehrungsfehler werfen keine Exception,
@@ -634,6 +698,13 @@ function Write-SqlLogEntry {
     .PARAMETER LogFilePath
         Optionaler Pfad zu einer Datei-Logdatei fuer den Fail-soft-Fallback.
 
+    .PARAMETER Opt1
+        Optionaler Wert fuer die Spalte opt1 (nvarchar(max), nicht gekuerzt). Ohne
+        Angabe oder mit $null wird die Spalte nicht in den Insert aufgenommen.
+
+    .PARAMETER Opt2
+        Optionaler Wert fuer die Spalte opt2, Verhalten wie Opt1.
+
     .EXAMPLE
         Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -Description 'manueller Testlauf' `
             -ConnectionString $connStr -Schema 'log' -Table 'log' -ProcessName 'MeinTool'
@@ -660,7 +731,13 @@ function Write-SqlLogEntry {
         [string]$ProcessName = '',
         [int]$ProcessId      = $PID,
 
-        [string]$LogFilePath = $null
+        [string]$LogFilePath = $null,
+
+        [AllowNull()]
+        [object]$Opt1 = $null,
+
+        [AllowNull()]
+        [object]$Opt2 = $null
     )
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) { return }
@@ -688,9 +765,11 @@ function Write-SqlLogEntry {
         $conn.Open()
         try {
             $cmd = $conn.CreateCommand()
-            $cmd.CommandText = "INSERT INTO $quotedTarget " +
-                               "(TS, hostname, processname, state, severity, processid, description) " +
-                               "VALUES (GETDATE(), @hostname, @processname, @state, @severity, @processid, @description)"
+            $columns = @('TS', 'hostname', 'processname', 'state', 'severity', 'processid', 'description')
+            $values  = @('GETDATE()', '@hostname', '@processname', '@state', '@severity', '@processid', '@description')
+            if ($null -ne $Opt1) { $columns += 'opt1'; $values += '@opt1' }
+            if ($null -ne $Opt2) { $columns += 'opt2'; $values += '@opt2' }
+            $cmd.CommandText = "INSERT INTO $quotedTarget ($($columns -join ', ')) VALUES ($($values -join ', '))"
 
             $cmd.Parameters.AddWithValue('@hostname',    $Hostname)    | Out-Null
             $cmd.Parameters.AddWithValue('@processname', $ProcessName) | Out-Null
@@ -699,13 +778,16 @@ function Write-SqlLogEntry {
             $cmd.Parameters.AddWithValue('@processid',   $ProcessId)   | Out-Null
             $descValue = if ($null -ne $Description) { $Description } else { [DBNull]::Value }
             $cmd.Parameters.AddWithValue('@description', $descValue)   | Out-Null
+            if ($null -ne $Opt1) { $cmd.Parameters.AddWithValue('@opt1', [string]$Opt1) | Out-Null }
+            if ($null -ne $Opt2) { $cmd.Parameters.AddWithValue('@opt2', [string]$Opt2) | Out-Null }
             $cmd.ExecuteNonQuery() | Out-Null
         } finally {
             $conn.Close()
         }
     } catch {
         $ts       = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        $fallback = "[$ts] [Warning  ] [Logging] [] SQL-Logging fehlgeschlagen (State=$State): $_"
+        $hint     = if ($null -ne $Opt1 -or $null -ne $Opt2) { ' Hinweis: Spalten opt1/opt2 in der Zieltabelle vorhanden?' } else { '' }
+        $fallback = "[$ts] [Warning  ] [Logging] [] SQL-Logging fehlgeschlagen (State=$State): $_$hint"
         if ($LogFilePath) {
             $null = Add-PSToolboxLogLine -Path $LogFilePath -Line $fallback
         }

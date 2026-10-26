@@ -96,3 +96,61 @@ Describe 'Write-SqlLogEntry (Testtyp statt SqlConnection)' {
         [PSTFakeSqlConn]::Last.CommandText | Should -Match '^INSERT INTO \[s\]\]x\]\.\[t\]\]; DROP TABLE a; --\] '
     }
 }
+
+Describe 'Write-SqlLogEntry Opt1/Opt2 (Testtyp statt SqlConnection)' {
+    BeforeEach {
+        [PSTFakeSqlConn]::Last = $null
+        Mock Resolve-PSToolboxSqlClientType -ModuleName PSToolbox.Logging { [PSTFakeSqlConn] }
+    }
+
+    It 'laesst ohne Opt1/Opt2 den Insert unveraendert und ohne opt-Parameter' {
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x'
+        [PSTFakeSqlConn]::Last.CommandText | Should -BeExactly 'INSERT INTO [log].[log] (TS, hostname, processname, state, severity, processid, description) VALUES (GETDATE(), @hostname, @processname, @state, @severity, @processid, @description)'
+        [PSTFakeSqlConn]::Last.Parameters.Values.ContainsKey('@opt1') | Should -BeFalse
+        [PSTFakeSqlConn]::Last.Parameters.Values.ContainsKey('@opt2') | Should -BeFalse
+    }
+
+    It 'nimmt nur Opt1 auf, wenn nur Opt1 angegeben ist' {
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -Opt1 'eins'
+        $last = [PSTFakeSqlConn]::Last
+        $last.CommandText | Should -Match ', opt1\) VALUES \(.*, @opt1\)$'
+        $last.CommandText | Should -Not -Match 'opt2'
+        $last.Parameters.Values['@opt1'] | Should -BeExactly 'eins'
+        $last.Parameters.Values.ContainsKey('@opt2') | Should -BeFalse
+    }
+
+    It 'nimmt beide Spalten nach description auf und schreibt die Werte als String' {
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -Opt1 42 -Opt2 'zwei'
+        $last = [PSTFakeSqlConn]::Last
+        $last.CommandText | Should -Match 'description, opt1, opt2\) VALUES \(.*@description, @opt1, @opt2\)$'
+        $last.Parameters.Values['@opt1'] | Should -BeOfType ([string])
+        $last.Parameters.Values['@opt1'] | Should -BeExactly '42'
+        $last.Parameters.Values['@opt2'] | Should -BeExactly 'zwei'
+    }
+
+    It 'behandelt -Opt1 $null wie nicht angegeben' {
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -Opt1 $null
+        $last = [PSTFakeSqlConn]::Last
+        $last.CommandText | Should -Not -Match 'opt1'
+        $last.Parameters.Values.ContainsKey('@opt1') | Should -BeFalse
+    }
+
+    It 'kuerzt einen langen Text in Opt1 nicht' {
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -Opt1 ('b' * 5000)
+        [PSTFakeSqlConn]::Last.Parameters.Values['@opt1'].Length | Should -Be 5000
+    }
+
+    It 'nennt im Dateilog bei Fehler den opt1/opt2-Hinweis nur, wenn Opt1 oder Opt2 angegeben waren' {
+        Mock Resolve-PSToolboxSqlClientType -ModuleName PSToolbox.Logging { throw 'Testfehler' }
+        $mit = Join-Path $TestDrive 'mit-opt.log'
+        $ohne = Join-Path $TestDrive 'ohne-opt.log'
+
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -Opt2 'zwei' -LogFilePath $mit
+        Write-SqlLogEntry -State 'RUNNING' -Severity 'INFO' -ConnectionString 'x' -LogFilePath $ohne
+
+        (Get-Content -Path $mit -Raw) | Should -Match 'SQL-Logging fehlgeschlagen'
+        (Get-Content -Path $mit -Raw) | Should -Match 'Hinweis: Spalten opt1/opt2'
+        (Get-Content -Path $ohne -Raw) | Should -Match 'SQL-Logging fehlgeschlagen'
+        (Get-Content -Path $ohne -Raw) | Should -Not -Match 'opt1/opt2'
+    }
+}
